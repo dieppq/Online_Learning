@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: learnhub-capstone-prod
+  labels:
+    app.kubernetes.io/name: learnhub-capstone-prod
+    app.kubernetes.io/part-of: learnhub
+    environment: prod
+

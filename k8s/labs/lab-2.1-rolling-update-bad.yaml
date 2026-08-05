@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: learnhub-course-api
+  namespace: rollout-lab
+  labels:
+    app: learnhub-course-api
+    component: course
+    lab: "2.1"
+  annotations:
+    kubernetes.io/change-cause: "Broken rollout using an image tag that does not exist"
+spec:
+  replicas: 3
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: learnhub-course-api
+  template:
+    metadata:
+      labels:
+        app: learnhub-course-api
+        component: course
+        lab: "2.1"
+    spec:
+      containers:
+        - name: course-service
+          image: learnhub/course-service:does-not-exist-lab-2-1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: SERVICE_NAME
+              value: course-service
+            - name: APP_VERSION
+              value: broken
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi

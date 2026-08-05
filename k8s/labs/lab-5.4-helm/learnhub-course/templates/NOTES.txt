@@ -1,0 +1,5 @@
+LearnHub course-service release {{ .Release.Name }} is installed.
+
+Verify:
+  kubectl get deploy,svc,pod -n {{ .Release.Namespace }}
+  kubectl rollout status deployment/learnhub-course-helm -n {{ .Release.Namespace }}

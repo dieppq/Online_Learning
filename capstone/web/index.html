@@ -1,0 +1,574 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>LearnHub Console</title>
+    <link rel="icon" href="/assets/learnhub-mark.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <a class="brand" href="/dashboard" data-view-link="dashboard" aria-label="LearnHub Console">
+          <img src="/assets/learnhub-mark.svg" alt="">
+          <span>
+            <strong>LearnHub</strong>
+            <small>Capstone Console</small>
+          </span>
+        </a>
+
+        <nav class="nav" aria-label="Main">
+          <a class="nav-item active" href="/dashboard" data-view-link="dashboard">Dashboard</a>
+          <a class="nav-item" href="/courses" data-view-link="courses">Khóa học</a>
+          <a class="nav-item" href="/students" data-view-link="students">Học viên</a>
+          <a class="nav-item" href="/enrollments" data-view-link="enrollments">Ghi danh</a>
+          <a class="nav-item" href="/payments" data-view-link="payments">Thanh toán</a>
+          <a class="nav-item" href="/notifications" data-view-link="notifications">Thông báo</a>
+          <a class="nav-item" href="/platform" data-view-link="platform">Platform</a>
+        </nav>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">learnhub-capstone-dev</p>
+            <h1>Kubernetes LearnHub Console</h1>
+          </div>
+          <div class="topbar-actions">
+            <span id="apiStatus" class="status-pill">API</span>
+            <button id="refreshButton" class="primary-button" type="button">Refresh</button>
+          </div>
+        </header>
+
+        <section class="stats-grid" aria-label="Summary">
+          <article class="stat">
+            <span class="stat-label">Học viên</span>
+            <strong id="studentCount">-</strong>
+            <small>user-service</small>
+          </article>
+          <article class="stat">
+            <span class="stat-label">Khóa học</span>
+            <strong id="courseCount">-</strong>
+            <small>course-service</small>
+          </article>
+          <article class="stat">
+            <span class="stat-label">Tiến độ CKAD</span>
+            <strong id="progressPercent">-</strong>
+            <small id="progressDetail">u-1001</small>
+          </article>
+          <article class="stat">
+            <span class="stat-label">Payment</span>
+            <strong id="paymentStatus">-</strong>
+            <small>payment-service</small>
+          </article>
+        </section>
+
+        <section id="view-dashboard" class="view active">
+          <div class="content-grid dashboard-grid">
+            <section class="panel wide">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Service overview</p>
+                  <h2>Luồng LearnHub</h2>
+                </div>
+              </div>
+              <div class="workflow-grid">
+                <a class="workflow-card" href="/students" data-view-link="students">
+                  <span class="workflow-step">01</span>
+                  <strong>Học viên</strong>
+                  <small>Đăng ký, đăng nhập, xem profile</small>
+                </a>
+                <a class="workflow-card" href="/courses" data-view-link="courses">
+                  <span class="workflow-step">02</span>
+                  <strong>Khóa học</strong>
+                  <small>Catalog, detail, lesson metadata</small>
+                </a>
+                <a class="workflow-card" href="/payments" data-view-link="payments">
+                  <span class="workflow-step">03</span>
+                  <strong>Thanh toán</strong>
+                  <small>Tạo payment và confirm event</small>
+                </a>
+                <a class="workflow-card" href="/enrollments" data-view-link="enrollments">
+                  <span class="workflow-step">04</span>
+                  <strong>Ghi danh</strong>
+                  <small>Enrollment, progress, completed lesson</small>
+                </a>
+                <a class="workflow-card" href="/notifications" data-view-link="notifications">
+                  <span class="workflow-step">05</span>
+                  <strong>Thông báo</strong>
+                  <small>Email mock và reminder queue</small>
+                </a>
+                <a class="workflow-card" href="/platform" data-view-link="platform">
+                  <span class="workflow-step">06</span>
+                  <strong>Platform</strong>
+                  <small>Ingress route và API catalog</small>
+                </a>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading compact">
+                <div>
+                  <p class="eyebrow">Enrollment</p>
+                  <h2>Tiến độ hiện tại</h2>
+                </div>
+              </div>
+              <div class="progress-block">
+                <div class="ring" id="progressRing" style="--value: 0">
+                  <span id="progressRingText">0%</span>
+                </div>
+                <div>
+                  <p class="metric-title">u-1001 / c-k8s-ckad</p>
+                  <p id="progressCopy" class="muted">Đang tải...</p>
+                </div>
+              </div>
+              <div class="inline-actions">
+                <button class="primary-button" type="button" data-action="quick-enroll">Ghi danh</button>
+                <button class="secondary-button" type="button" data-action="quick-progress">Cập nhật bài học</button>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading compact">
+                <div>
+                  <p class="eyebrow">Last API response</p>
+                  <h2>Payload</h2>
+                </div>
+              </div>
+              <pre id="dashboardResult" class="result-box">{}</pre>
+            </section>
+          </div>
+        </section>
+
+        <section id="view-courses" class="view">
+          <div class="content-grid">
+            <section class="panel wide">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Course service</p>
+                  <h2>Catalog</h2>
+                </div>
+                <button class="secondary-button" type="button" data-action="refresh-courses">Tải lại</button>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Khóa học</th>
+                      <th>Lessons</th>
+                      <th>Giá</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="courseRows"></tbody>
+                </table>
+              </div>
+              <div id="courseCards" class="course-grid section-spacer"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading compact">
+                <div>
+                  <p class="eyebrow">GET /api/courses/{id}</p>
+                  <h2>Chi tiết khóa học</h2>
+                </div>
+              </div>
+              <form id="courseDetailForm" class="form-stack" data-submit-action="course-detail">
+                <label>
+                  <span>Course ID</span>
+                  <input name="course_id" value="c-k8s-ckad" autocomplete="off">
+                </label>
+                <button class="primary-button" type="submit">Xem chi tiết</button>
+              </form>
+              <dl id="courseDetails" class="detail-list section-spacer"></dl>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading compact">
+                <div>
+                  <p class="eyebrow">POST /api/courses</p>
+                  <h2>Tạo khóa học</h2>
+                </div>
+              </div>
+              <form id="courseCreateForm" class="form-stack" data-submit-action="course-create">
+                <label>
+                  <span>Title</span>
+                  <input name="title" value="Kubernetes rollout nâng cao" autocomplete="off">
+                </label>
+                <button class="primary-button" type="submit">Tạo khóa học</button>
+              </form>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading compact">
+                <div>
+                  <p class="eyebrow">POST /api/courses/{id}/lessons</p>
+                  <h2>Thêm bài học</h2>
+                </div>
+              </div>
+              <form id="lessonCreateForm" class="form-stack" data-submit-action="lesson-create">
+                <label>
+                  <span>Course ID</span>
+                  <input name="course_id" value="c-k8s-ckad" autocomplete="off">
+                </label>
+                <label>
+                  <span>Lesson title</span>
+                  <input name="title" value="Debug rollout bằng kubectl" autocomplete="off">
+                </label>
+                <button class="primary-button" type="submit">Thêm lesson</button>
+              </form>
+            </section>
+
+            <section class="panel raw-panel">
+              <div class="panel-heading compact">
+                <div>
+                  <p class="eyebrow">Course response</p>
+                  <h2>Payload</h2>
+                </div>
+              </div>
+              <pre id="coursesResult" class="result-box">{}</pre>
+            </section>
+          </div>
+        </section>
+
+        <section id="view-students" class="view">
+          <div class="content-grid">
+            <section class="panel wide">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">User service</p>
+                  <h2>Học viên và giảng viên</h2>
+                </div>
+                <button class="secondary-button" type="button" data-action="refresh-users">Tải lại</button>
+              </div>
+              <div id="studentCards" class="people-grid"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading compact">
+                <div>
+                  <p class="eyebrow">GET /api/users/{id}</p>
+                  <h2>Profile</h2>
+                </div>
+              </div>
+              <form id="userDetailForm" class="form-stack" data-submit-action="user-detail">
+                <label>
+                  <span>User ID</span>
+                  <input name="user_id" value="u-1001" autocomplete="off">
+                </label>
+                <button class="primary-button" type="submit">Xem profile</button>
+              </form>
+              <dl id="userDetails" class="detail-list section-spacer"></dl>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading compact">
+                <div>
+                  <p class="eyebrow">POST /api/users/register</p>
+                  <h2>Đăng ký</h2>
+                </div>
+              </div>
+              <form id="registerForm" class="form-stack" data-submit-action="user-register">
+                <label>
+                  <span>Name</span>
+                  <input name="name" value="Le Minh" autocomplete="name">
+                </label>
+                <label>
+                  <span>Email</span>
+                  <input name="email" value="minh@example.com" autocomplete="email">
+                </label>
+                <button class="primary-button" type="submit">Đăng ký</button>
+              </form>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading compact">
+                <div>
+                  <p class="eyebrow">POST /api/users/login</p>
+                  <h2>Đăng nhập mock</h2>
+                </div>
+              </div>
+              <form id="loginForm" class="form-stack" data-submit-action="user-login">
+                <label>
+                  <span>Email</span>
+                  <input name="email" value="an@example.com" autocomplete="email">
+                </label>
+                <button class="primary-button" type="submit">Đăng nhập</button>
+              </form>
+            </section>
+
+            <section class="panel raw-panel">
+              <div class="panel-heading compact">
+                <div>
+                  <p class="eyebrow">User response</p>
+                  <h2>Payload</h2>
+                </div>
+              </div>
+              <pre id="studentsResult" class="result-box">{}</pre>
+            </section>
+          </div>
+        </section>
+
+        <section id="view-enrollments" class="view">
+          <div class="content-grid">
+            <section class="panel wide">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Enrollment service</p>
+                  <h2>Khóa học đã ghi danh</h2>
+                </div>
+              </div>
+              <form id="userCoursesForm" class="form-inline" data-submit-action="user-courses">
+                <label>
+                  <span>User ID</span>
+                  <input name="user_id" value="u-1001" autocomplete="off">
+                </label>
+                <button class="primary-button" type="submit">Xem khóa học</button>
+              </form>
+              <div id="enrolledCourses" class="course-grid section-spacer"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading compact">
+                <div>
+                  <p class="eyebrow">POST /api/enrollments</p>
+                  <h2>Tạo ghi danh</h2>
+                </div>
+              </div>
+              <form id="enrollmentCreateForm" class="form-stack" data-submit-action="enrollment-create">
+                <label>
+                  <span>User ID</span>
+                  <input name="user_id" value="u-1001" autocomplete="off">
+                </label>
+                <label>
+                  <span>Course ID</span>
+                  <input name="course_id" value="c-k8s-ckad" autocomplete="off">
+                </label>
+                <button class="primary-button" type="submit">Ghi danh</button>
+              </form>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading compact">
+                <div>
+                  <p class="eyebrow">GET /api/progress/{userId}/{courseId}</p>
+                  <h2>Tiến độ</h2>
+                </div>
+              </div>
+              <form id="progressDetailForm" class="form-stack" data-submit-action="progress-detail">
+                <label>
+                  <span>User ID</span>
+                  <input name="user_id" value="u-1001" autocomplete="off">
+                </label>
+                <label>
+                  <span>Course ID</span>
+                  <input name="course_id" value="c-k8s-ckad" autocomplete="off">
+                </label>
+                <button class="primary-button" type="submit">Xem tiến độ</button>
+              </form>
+              <dl id="progressDetails" class="detail-list section-spacer"></dl>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading compact">
+                <div>
+                  <p class="eyebrow">POST /api/progress</p>
+                  <h2>Cập nhật bài học</h2>
+                </div>
+              </div>
+              <form id="progressUpdateForm" class="form-stack" data-submit-action="progress-update">
+                <label>
+                  <span>User ID</span>
+                  <input name="user_id" value="u-1001" autocomplete="off">
+                </label>
+                <label>
+                  <span>Course ID</span>
+                  <input name="course_id" value="c-k8s-ckad" autocomplete="off">
+                </label>
+                <label>
+                  <span>Lesson ID</span>
+                  <input name="lesson_id" value="l-08" autocomplete="off">
+                </label>
+                <button class="primary-button" type="submit">Cập nhật progress</button>
+              </form>
+            </section>
+
+            <section class="panel raw-panel">
+              <div class="panel-heading compact">
+                <div>
+                  <p class="eyebrow">Enrollment response</p>
+                  <h2>Payload</h2>
+                </div>
+              </div>
+              <pre id="enrollmentsResult" class="result-box">{}</pre>
+            </section>
+          </div>
+        </section>
+
+        <section id="view-payments" class="view">
+          <div class="content-grid">
+            <section class="panel wide">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Payment service</p>
+                  <h2>Thanh toán</h2>
+                </div>
+              </div>
+              <dl id="paymentDetails" class="detail-list"></dl>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading compact">
+                <div>
+                  <p class="eyebrow">GET /api/payments/{id}</p>
+                  <h2>Chi tiết payment</h2>
+                </div>
+              </div>
+              <form id="paymentDetailForm" class="form-stack" data-submit-action="payment-detail">
+                <label>
+                  <span>Payment ID</span>
+                  <input name="payment_id" value="p-1001" autocomplete="off">
+                </label>
+                <button class="primary-button" type="submit">Xem payment</button>
+              </form>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading compact">
+                <div>
+                  <p class="eyebrow">POST /api/payments</p>
+                  <h2>Tạo payment</h2>
+                </div>
+              </div>
+              <form id="paymentCreateForm" class="form-stack" data-submit-action="payment-create">
+                <label>
+                  <span>User ID</span>
+                  <input name="user_id" value="u-1001" autocomplete="off">
+                </label>
+                <label>
+                  <span>Course ID</span>
+                  <input name="course_id" value="c-k8s-ckad" autocomplete="off">
+                </label>
+                <button class="primary-button" type="submit">Tạo payment</button>
+              </form>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading compact">
+                <div>
+                  <p class="eyebrow">POST /api/payments/{id}/confirm</p>
+                  <h2>Confirm payment</h2>
+                </div>
+              </div>
+              <form id="paymentConfirmForm" class="form-stack" data-submit-action="payment-confirm">
+                <label>
+                  <span>Payment ID</span>
+                  <input name="payment_id" value="p-1001" autocomplete="off">
+                </label>
+                <button class="primary-button" type="submit">Confirm</button>
+              </form>
+            </section>
+
+            <section class="panel raw-panel">
+              <div class="panel-heading compact">
+                <div>
+                  <p class="eyebrow">Payment response</p>
+                  <h2>Payload</h2>
+                </div>
+              </div>
+              <pre id="paymentsResult" class="result-box">{}</pre>
+            </section>
+          </div>
+        </section>
+
+        <section id="view-notifications" class="view">
+          <div class="content-grid">
+            <section class="panel wide">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Notification service</p>
+                  <h2>Thông báo</h2>
+                </div>
+                <button class="secondary-button" type="button" data-action="refresh-notifications">Tải lại</button>
+              </div>
+              <div id="notificationCards" class="notification-grid"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading compact">
+                <div>
+                  <p class="eyebrow">POST /api/notifications/email</p>
+                  <h2>Gửi email mock</h2>
+                </div>
+              </div>
+              <form id="emailForm" class="form-stack" data-submit-action="notification-email">
+                <label>
+                  <span>Recipient</span>
+                  <input name="recipient" value="an@example.com" autocomplete="email">
+                </label>
+                <button class="primary-button" type="submit">Gửi email</button>
+              </form>
+            </section>
+
+            <section class="panel">
+              <div class="panel-heading compact">
+                <div>
+                  <p class="eyebrow">POST /api/notifications/course-reminder</p>
+                  <h2>Gửi reminder</h2>
+                </div>
+              </div>
+              <form id="reminderForm" class="form-stack" data-submit-action="notification-reminder">
+                <label>
+                  <span>User ID</span>
+                  <input name="user_id" value="u-1001" autocomplete="off">
+                </label>
+                <label>
+                  <span>Course ID</span>
+                  <input name="course_id" value="c-k8s-ckad" autocomplete="off">
+                </label>
+                <button class="primary-button" type="submit">Gửi reminder</button>
+              </form>
+            </section>
+
+            <section class="panel raw-panel">
+              <div class="panel-heading compact">
+                <div>
+                  <p class="eyebrow">Notification response</p>
+                  <h2>Payload</h2>
+                </div>
+              </div>
+              <pre id="notificationsResult" class="result-box">{}</pre>
+            </section>
+          </div>
+        </section>
+
+        <section id="view-platform" class="view">
+          <div class="content-grid">
+            <section class="panel wide">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Kubernetes Ingress</p>
+                  <h2>API catalog</h2>
+                </div>
+                <button class="secondary-button" type="button" data-action="refresh-platform">Tải lại</button>
+              </div>
+              <div id="apiCatalog" class="stack-list"></div>
+            </section>
+            <section class="panel raw-panel">
+              <div class="panel-heading compact">
+                <div>
+                  <p class="eyebrow">Last API response</p>
+                  <h2>Payload</h2>
+                </div>
+              </div>
+              <pre id="rawOutput" class="result-box">{}</pre>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="/app.js" defer></script>
+  </body>
+</html>

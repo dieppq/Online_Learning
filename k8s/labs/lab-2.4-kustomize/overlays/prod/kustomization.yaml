@@ -1,0 +1,35 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: kustomize-prod
+resources:
+  - ../../base
+  - namespace.yaml
+labels:
+  - pairs:
+      env: prod
+    includeSelectors: true
+images:
+  - name: learnhub/course-service
+    newTag: "0.1.1"
+replicas:
+  - name: learnhub-course-kustomize
+    count: 4
+patches:
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: learnhub-course-kustomize
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: learnhub-course-kustomize
+      spec:
+        template:
+          spec:
+            containers:
+              - name: course-service
+                env:
+                  - name: APP_VERSION
+                    value: "0.1.1"

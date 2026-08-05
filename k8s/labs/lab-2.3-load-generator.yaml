@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: learnhub-course-scale-load
+  namespace: scale-lab
+  labels:
+    app: learnhub-course-scale-load
+    lab: "2.3"
+spec:
+  replicas: 8
+  selector:
+    matchLabels:
+      app: learnhub-course-scale-load
+  template:
+    metadata:
+      labels:
+        app: learnhub-course-scale-load
+        lab: "2.3"
+    spec:
+      containers:
+        - name: curl
+          image: curlimages/curl:8.10.1
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: BURN_MS
+              value: "750"
+          command:
+            - sh
+            - -c
+          args:
+            - |
+              while true; do
+                curl --fail --silent --show-error "http://learnhub-course-scale/cpu-burn?ms=${BURN_MS}" > /dev/null || true
+              done
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi

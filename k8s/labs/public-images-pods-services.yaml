@@ -1,0 +1,127 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: image-lab
+  labels:
+    lab: public-images
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx-web
+  namespace: image-lab
+  labels:
+    app: nginx-web
+    tier: frontend
+    lab: public-images
+spec:
+  containers:
+    - name: nginx
+      image: nginx:1.27
+      ports:
+        - containerPort: 80
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 200m
+          memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-web
+  namespace: image-lab
+  labels:
+    app: nginx-web
+    lab: public-images
+spec:
+  type: ClusterIP
+  selector:
+    app: nginx-web
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: apache-web
+  namespace: image-lab
+  labels:
+    app: apache-web
+    tier: frontend
+    lab: public-images
+spec:
+  containers:
+    - name: httpd
+      image: httpd:2.4-alpine
+      ports:
+        - containerPort: 80
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 200m
+          memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: apache-web
+  namespace: image-lab
+  labels:
+    app: apache-web
+    lab: public-images
+spec:
+  type: ClusterIP
+  selector:
+    app: apache-web
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: whoami-api
+  namespace: image-lab
+  labels:
+    app: whoami-api
+    tier: backend
+    lab: public-images
+spec:
+  containers:
+    - name: whoami
+      image: traefik/whoami:v1.10
+      ports:
+        - containerPort: 80
+      resources:
+        requests:
+          cpu: 50m
+          memory: 32Mi
+        limits:
+          cpu: 200m
+          memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: whoami-api
+  namespace: image-lab
+  labels:
+    app: whoami-api
+    lab: public-images
+spec:
+  type: ClusterIP
+  selector:
+    app: whoami-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+

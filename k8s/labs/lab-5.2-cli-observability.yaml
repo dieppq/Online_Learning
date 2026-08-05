@@ -1,0 +1,57 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: observability-lab
+  labels:
+    purpose: ckad
+    lab: "5.2"
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: learnhub-observe-pod
+  namespace: observability-lab
+  labels:
+    app: learnhub-observe
+    lab: "5.2"
+spec:
+  restartPolicy: Always
+  containers:
+    - name: main
+      image: busybox:1.36
+      imagePullPolicy: IfNotPresent
+      command:
+        - sh
+        - -c
+        - |
+          i=0
+          while true; do
+            i=$((i + 1))
+            echo "main container heartbeat course_id=c-k8s-ckad iteration=$i"
+            sleep 5
+          done
+      resources:
+        requests:
+          cpu: 10m
+          memory: 16Mi
+        limits:
+          cpu: 50m
+          memory: 32Mi
+    - name: crashy
+      image: busybox:1.36
+      imagePullPolicy: IfNotPresent
+      command:
+        - sh
+        - -c
+        - |
+          echo "crashy container attempt for LearnHub observability lab"
+          echo "simulated bug: failed to load lesson progress cache"
+          sleep 2
+          exit 1
+      resources:
+        requests:
+          cpu: 10m
+          memory: 16Mi
+        limits:
+          cpu: 50m
+          memory: 32Mi

@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: learnhub-config
+  namespace: learnhub-lab
+  labels:
+    app.kubernetes.io/name: learnhub-config
+    app.kubernetes.io/part-of: learnhub
+data:
+  APP_VERSION: "0.1.0"
+  PORT: "8080"
+  LOG_LEVEL: "info"
+  JWT_ISSUER: "learnhub"
+  POSTGRES_HOST: "postgresql"
+  REDIS_ADDR: "redis:6379"
+  NATS_URL: "nats://nats:4222"
+  MINIO_ENDPOINT: "minio:9000"
+  SMTP_HOST: "smtp.local"
+  USER_SERVICE_URL: "http://user-service"
+  COURSE_SERVICE_URL: "http://course-service"
+  ENROLLMENT_SERVICE_URL: "http://enrollment-service"
+  PAYMENT_SERVICE_URL: "http://payment-service"
+  NOTIFICATION_SERVICE_URL: "http://notification-service"
+

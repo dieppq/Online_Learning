@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: learnhub-pvc-reader
+  namespace: storage-lab
+  labels:
+    app: learnhub-storage
+    role: reader
+    lab: "4.4"
+spec:
+  containers:
+    - name: reader
+      image: busybox:1.36
+      imagePullPolicy: IfNotPresent
+      command:
+        - sh
+        - -c
+        - sleep 3600
+      volumeMounts:
+        - name: course-cache
+          mountPath: /data
+      resources:
+        requests:
+          cpu: 10m
+          memory: 16Mi
+        limits:
+          cpu: 50m
+          memory: 32Mi
+  volumes:
+    - name: course-cache
+      persistentVolumeClaim:
+        claimName: learnhub-course-cache

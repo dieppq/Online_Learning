@@ -1,0 +1,6 @@
+apiVersion: v2
+name: learnhub-course
+description: LearnHub course-service chart for CKAD Helm deploy and rollback lab
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

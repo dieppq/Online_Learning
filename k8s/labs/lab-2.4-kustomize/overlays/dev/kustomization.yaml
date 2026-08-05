@@ -1,0 +1,16 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: kustomize-dev
+resources:
+  - ../../base
+  - namespace.yaml
+labels:
+  - pairs:
+      env: dev
+    includeSelectors: true
+images:
+  - name: learnhub/course-service
+    newTag: "0.1.0"
+replicas:
+  - name: learnhub-course-kustomize
+    count: 1

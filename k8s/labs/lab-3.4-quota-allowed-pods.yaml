@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: learnhub-quota-user
+  namespace: quota-lab
+  labels:
+    app: learnhub-quota
+    component: user
+    lab: "3.4"
+spec:
+  containers:
+    - name: user-service
+      image: learnhub/user-service:0.1.0
+      imagePullPolicy: IfNotPresent
+      ports:
+        - name: http
+          containerPort: 8080
+      env:
+        - name: SERVICE_NAME
+          value: user-service-quota
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: learnhub-quota-course
+  namespace: quota-lab
+  labels:
+    app: learnhub-quota
+    component: course
+    lab: "3.4"
+spec:
+  containers:
+    - name: course-service
+      image: learnhub/course-service:0.1.0
+      imagePullPolicy: IfNotPresent
+      ports:
+        - name: http
+          containerPort: 8080
+      env:
+        - name: SERVICE_NAME
+          value: course-service-quota

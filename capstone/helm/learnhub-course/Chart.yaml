@@ -1,0 +1,7 @@
+apiVersion: v2
+name: learnhub-course
+description: LearnHub course-service Helm chart for CKAD capstone upgrade and rollback demo
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+

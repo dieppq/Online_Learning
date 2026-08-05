@@ -1,0 +1,71 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: learnhub-app
+  labels:
+    app.kubernetes.io/name: learnhub-app
+    app.kubernetes.io/part-of: learnhub
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: learnhub-reporter
+  labels:
+    app.kubernetes.io/name: learnhub-reporter
+    app.kubernetes.io/part-of: learnhub
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: learnhub-runtime-reader
+  labels:
+    app.kubernetes.io/name: learnhub-runtime-reader
+    app.kubernetes.io/part-of: learnhub
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+      - services
+      - endpoints
+      - events
+      - configmaps
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - apps
+    resources:
+      - deployments
+      - replicasets
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - autoscaling
+    resources:
+      - horizontalpodautoscalers
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: learnhub-reporter-runtime-reader
+  labels:
+    app.kubernetes.io/name: learnhub-reporter-runtime-reader
+    app.kubernetes.io/part-of: learnhub
+subjects:
+  - kind: ServiceAccount
+    name: learnhub-reporter
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: learnhub-runtime-reader
+

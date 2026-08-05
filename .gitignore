@@ -1,0 +1,30 @@
+.tmp/
+.tools/
+
+# Runtime secrets and local environment files.
+*.env
+!*.env.example
+.env
+.env.*
+!.env.example
+
+# Local Kubernetes and tooling artifacts.
+kubeconfig
+*.kubeconfig
+*.log
+*.tmp
+*.bak
+
+# Build and coverage output.
+bin/
+dist/
+build/
+coverage/
+*.test
+*.out
+
+# OS/editor files.
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

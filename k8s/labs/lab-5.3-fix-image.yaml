@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: learnhub-triage-api
+  namespace: triage-lab
+  labels:
+    app: learnhub-triage-api
+    component: course
+    lab: "5.3"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: learnhub-triage-api
+  template:
+    metadata:
+      labels:
+        app: learnhub-triage-api
+        component: course
+        lab: "5.3"
+    spec:
+      containers:
+        - name: course-service
+          image: learnhub/course-service:0.1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: SERVICE_NAME
+              value: course-service-triage
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi

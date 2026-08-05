@@ -1,0 +1,136 @@
+services:
+  postgresql:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: learnhub
+      POSTGRES_USER: learnhub
+      POSTGRES_PASSWORD: learnhub-postgres-lab-password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgresql-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U learnhub"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  nats:
+    image: nats:2.10-alpine
+    command: ["-js", "-m", "8222"]
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+
+  minio:
+    image: minio/minio:latest
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: learnhub
+      MINIO_ROOT_PASSWORD: learnhub-minio-lab-password
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+
+  user-service:
+    build:
+      context: .
+      dockerfile: services/user-service/Dockerfile
+    image: learnhub/user-service:0.1.0
+    environment:
+      SERVICE_NAME: user-service
+      PORT: "8080"
+      APP_VERSION: "0.1.0"
+      POSTGRES_HOST: postgresql
+      JWT_ISSUER: learnhub
+      JWT_SECRET: learnhub-jwt-lab-secret
+    ports:
+      - "8081:8080"
+    depends_on:
+      - postgresql
+
+  course-service:
+    build:
+      context: .
+      dockerfile: services/course-service/Dockerfile
+    image: learnhub/course-service:0.1.0
+    environment:
+      SERVICE_NAME: course-service
+      PORT: "8080"
+      APP_VERSION: "0.1.0"
+      POSTGRES_HOST: postgresql
+      MINIO_ENDPOINT: minio:9000
+    ports:
+      - "8082:8080"
+    depends_on:
+      - postgresql
+      - minio
+
+  enrollment-service:
+    build:
+      context: .
+      dockerfile: services/enrollment-service/Dockerfile
+    image: learnhub/enrollment-service:0.1.0
+    environment:
+      SERVICE_NAME: enrollment-service
+      PORT: "8080"
+      APP_VERSION: "0.1.0"
+      POSTGRES_HOST: postgresql
+      REDIS_ADDR: redis:6379
+      NATS_URL: nats://nats:4222
+    ports:
+      - "8083:8080"
+    depends_on:
+      - postgresql
+      - redis
+      - nats
+
+  payment-service:
+    build:
+      context: .
+      dockerfile: services/payment-service/Dockerfile
+    image: learnhub/payment-service:0.1.0
+    environment:
+      SERVICE_NAME: payment-service
+      PORT: "8080"
+      APP_VERSION: "0.1.0"
+      POSTGRES_HOST: postgresql
+      NATS_URL: nats://nats:4222
+    ports:
+      - "8084:8080"
+    depends_on:
+      - postgresql
+      - nats
+
+  notification-service:
+    build:
+      context: .
+      dockerfile: services/notification-service/Dockerfile
+    image: learnhub/notification-service:0.1.0
+    environment:
+      SERVICE_NAME: notification-service
+      PORT: "8080"
+      APP_VERSION: "0.1.0"
+      NATS_URL: nats://nats:4222
+      SMTP_HOST: smtp.local
+    ports:
+      - "8085:8080"
+    depends_on:
+      - nats
+
+volumes:
+  postgresql-data:
+  minio-data:
+

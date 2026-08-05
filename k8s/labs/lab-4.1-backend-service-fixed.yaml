@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: learnhub-course-backend
+  namespace: service-lab
+  labels:
+    app: learnhub-course
+    role: backend
+    lab: "4.1"
+spec:
+  type: ClusterIP
+  selector:
+    app: learnhub-course
+    role: backend
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

@@ -1,0 +1,98 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ckad-lab
+  labels:
+    purpose: ckad
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: learnhub-init-sidecar
+  namespace: ckad-lab
+  labels:
+    app: learnhub
+    component: lesson-activity
+    lab: "1.2"
+    pattern: init-sidecar
+spec:
+  volumes:
+    - name: shared-data
+      emptyDir: {}
+  initContainers:
+    - name: init-course-data
+      image: curlimages/curl:8.10.1
+      command:
+        - sh
+        - -c
+        - |
+          set -eu
+          mkdir -p /shared/config /shared/logs
+          echo "COURSE_ID=c-k8s-ckad" > /shared/config/app.properties
+          echo "APP_MODE=lab" >> /shared/config/app.properties
+          echo "COURSE_SERVICE_URL=$COURSE_SERVICE_URL" >> /shared/config/app.properties
+          echo "$(date '+%Y-%m-%dT%H:%M:%S%z') init fetching course metadata from course-service" > /shared/logs/app.log
+          curl --fail --silent --show-error "$COURSE_SERVICE_URL/api/courses/c-k8s-ckad" > /shared/config/course.json
+          echo "$(date '+%Y-%m-%dT%H:%M:%S%z') init wrote /shared/config/course.json" >> /shared/logs/app.log
+      env:
+        - name: COURSE_SERVICE_URL
+          value: http://course-service.learnhub-lab.svc.cluster.local
+      volumeMounts:
+        - name: shared-data
+          mountPath: /shared
+      resources:
+        requests:
+          cpu: 25m
+          memory: 32Mi
+        limits:
+          cpu: 100m
+          memory: 64Mi
+  containers:
+    - name: app
+      image: curlimages/curl:8.10.1
+      command:
+        - sh
+        - -c
+        - |
+          set -eu
+          echo "$(date '+%Y-%m-%dT%H:%M:%S%z') app started with $(cat /shared/config/app.properties | tr '\n' ' ')" >> /shared/logs/app.log
+          echo "$(date '+%Y-%m-%dT%H:%M:%S%z') app course metadata $(cat /shared/config/course.json)" >> /shared/logs/app.log
+          i=1
+          while true; do
+            progress="$(curl --fail --silent --show-error "$ENROLLMENT_SERVICE_URL/api/progress/u-1001/c-k8s-ckad")"
+            echo "$(date '+%Y-%m-%dT%H:%M:%S%z') service=learnhub action=lesson_progress_check iteration=${i} response=${progress}" >> /shared/logs/app.log
+            i=$((i+1))
+            sleep 5
+          done
+      env:
+        - name: ENROLLMENT_SERVICE_URL
+          value: http://enrollment-service.learnhub-lab.svc.cluster.local
+      volumeMounts:
+        - name: shared-data
+          mountPath: /shared
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 200m
+          memory: 128Mi
+    - name: log-sidecar
+      image: busybox:1.36
+      command:
+        - sh
+        - -c
+        - |
+          echo "sidecar tailing /shared/logs/app.log"
+          tail -n +1 -f /shared/logs/app.log
+      volumeMounts:
+        - name: shared-data
+          mountPath: /shared
+          readOnly: true
+      resources:
+        requests:
+          cpu: 25m
+          memory: 32Mi
+        limits:
+          cpu: 100m
+          memory: 64Mi

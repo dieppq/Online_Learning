@@ -1,0 +1,72 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: learnhub-api
+  labels:
+    app.kubernetes.io/name: learnhub-api
+    app.kubernetes.io/part-of: learnhub
+    app.kubernetes.io/component: edge
+  annotations:
+    nginx.ingress.kubernetes.io/use-regex: "true"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: learnhub-capstone.local
+      http:
+        paths:
+          - path: /api/users/[^/]+/courses
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: enrollment-service
+                port:
+                  name: http
+          - path: /api/users
+            pathType: Prefix
+            backend:
+              service:
+                name: user-service
+                port:
+                  name: http
+          - path: /api/courses
+            pathType: Prefix
+            backend:
+              service:
+                name: course-service
+                port:
+                  name: http
+          - path: /api/enrollments
+            pathType: Prefix
+            backend:
+              service:
+                name: enrollment-service
+                port:
+                  name: http
+          - path: /api/progress
+            pathType: Prefix
+            backend:
+              service:
+                name: enrollment-service
+                port:
+                  name: http
+          - path: /api/payments
+            pathType: Prefix
+            backend:
+              service:
+                name: payment-service
+                port:
+                  name: http
+          - path: /api/notifications
+            pathType: Prefix
+            backend:
+              service:
+                name: notification-service
+                port:
+                  name: http
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web-ui
+                port:
+                  name: http

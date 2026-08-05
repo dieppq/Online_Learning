@@ -1,0 +1,64 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: learnhub-api-access-report
+  labels:
+    app.kubernetes.io/name: learnhub-api-access-report
+    app.kubernetes.io/part-of: learnhub
+    app.kubernetes.io/component: maintenance
+spec:
+  schedule: "*/15 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: learnhub-api-access-report
+            app.kubernetes.io/part-of: learnhub
+            app.kubernetes.io/component: maintenance
+        spec:
+          serviceAccountName: learnhub-reporter
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: reporter
+              image: curlimages/curl:8.10.1
+              imagePullPolicy: IfNotPresent
+              command:
+                - sh
+                - -c
+                - |
+                  set -eu
+                  token="$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)"
+                  ca="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+                  url="https://kubernetes.default.svc/api/v1/namespaces/${POD_NAMESPACE}/endpoints"
+                  curl --fail --silent --show-error --cacert "$ca" -H "Authorization: Bearer $token" "$url" | grep -q "course-service"
+                  echo kubernetes-api-access=ok
+              env:
+                - name: POD_NAMESPACE
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.namespace
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 32Mi
+                limits:
+                  cpu: 100m
+                  memory: 64Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+

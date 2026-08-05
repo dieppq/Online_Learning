@@ -1,0 +1,162 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ingress-lab
+  labels:
+    purpose: ckad
+    lab: "4.2"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: learnhub-ingress-frontend
+  namespace: ingress-lab
+  labels:
+    app: learnhub-ingress-frontend
+    role: frontend
+    lab: "4.2"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: learnhub-ingress-frontend
+  template:
+    metadata:
+      labels:
+        app: learnhub-ingress-frontend
+        role: frontend
+        lab: "4.2"
+    spec:
+      containers:
+        - name: user-service
+          image: learnhub/user-service:0.1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: SERVICE_NAME
+              value: user-service-ingress
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: learnhub-ingress-frontend
+  namespace: ingress-lab
+  labels:
+    app: learnhub-ingress-frontend
+    role: frontend
+    lab: "4.2"
+spec:
+  type: ClusterIP
+  selector:
+    app: learnhub-ingress-frontend
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: learnhub-ingress-backend
+  namespace: ingress-lab
+  labels:
+    app: learnhub-ingress-backend
+    role: backend
+    lab: "4.2"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: learnhub-ingress-backend
+  template:
+    metadata:
+      labels:
+        app: learnhub-ingress-backend
+        role: backend
+        lab: "4.2"
+    spec:
+      containers:
+        - name: course-service
+          image: learnhub/course-service:0.1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: SERVICE_NAME
+              value: course-service-ingress
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: learnhub-ingress-backend
+  namespace: ingress-lab
+  labels:
+    app: learnhub-ingress-backend
+    role: backend
+    lab: "4.2"
+spec:
+  type: ClusterIP
+  selector:
+    app: learnhub-ingress-backend
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: learnhub-ingress
+  namespace: ingress-lab
+  labels:
+    app: learnhub-ingress
+    lab: "4.2"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: learnhub.local
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: learnhub-ingress-backend
+                port:
+                  name: http
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: learnhub-ingress-frontend
+                port:
+                  name: http

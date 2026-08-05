@@ -1,0 +1,8 @@
+{
+  "spec": {
+    "selector": {
+      "app": "learnhub-course",
+      "color": "green"
+    }
+  }
+}

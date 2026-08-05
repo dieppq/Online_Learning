@@ -1,0 +1,94 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: learnhub-local-ingress-nginx
+  namespace: ingress-lab
+  labels:
+    app: learnhub-local-ingress
+    lab: "4.2"
+data:
+  nginx.conf: |
+    events {}
+    http {
+      server {
+        listen 8080;
+
+        location /api {
+          proxy_pass http://learnhub-ingress-backend.ingress-lab.svc.cluster.local;
+          proxy_set_header Host $host;
+          proxy_set_header X-LearnHub-Route backend;
+        }
+
+        location / {
+          proxy_pass http://learnhub-ingress-frontend.ingress-lab.svc.cluster.local;
+          proxy_set_header Host $host;
+          proxy_set_header X-LearnHub-Route frontend;
+        }
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: learnhub-local-ingress
+  namespace: ingress-lab
+  labels:
+    app: learnhub-local-ingress
+    lab: "4.2"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: learnhub-local-ingress
+  template:
+    metadata:
+      labels:
+        app: learnhub-local-ingress
+        lab: "4.2"
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.27-alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          volumeMounts:
+            - name: nginx-config
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+      volumes:
+        - name: nginx-config
+          configMap:
+            name: learnhub-local-ingress-nginx
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: learnhub-local-ingress
+  namespace: ingress-lab
+  labels:
+    app: learnhub-local-ingress
+    lab: "4.2"
+spec:
+  type: ClusterIP
+  selector:
+    app: learnhub-local-ingress
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

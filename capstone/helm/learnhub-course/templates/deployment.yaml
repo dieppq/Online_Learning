@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "learnhub-course.fullname" . }}
+  labels:
+    {{- include "learnhub-course.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+    app.kubernetes.io/version: {{ .Values.appVersion | quote }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "learnhub-course.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "learnhub-course.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/part-of: learnhub
+        app.kubernetes.io/component: api
+        app.kubernetes.io/version: {{ .Values.appVersion | quote }}
+    spec:
+      serviceAccountName: {{ include "learnhub-course.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: main
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.containerPort }}
+          envFrom:
+            - configMapRef:
+                name: {{ .Values.existingConfigMap }}
+                optional: true
+            - secretRef:
+                name: {{ .Values.existingSecret }}
+                optional: true
+          env:
+            - name: SERVICE_NAME
+              value: {{ .Values.serviceName | quote }}
+            - name: APP_VERSION
+              value: {{ .Values.appVersion | quote }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+

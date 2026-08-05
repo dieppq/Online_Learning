@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: learnhub-course-api
+  namespace: bluegreen-lab
+  labels:
+    app: learnhub-course
+    component: course
+    lab: "2.2"
+spec:
+  type: ClusterIP
+  selector:
+    app: learnhub-course
+    color: blue
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

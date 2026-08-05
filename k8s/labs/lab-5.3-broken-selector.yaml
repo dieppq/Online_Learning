@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: triage-lab
+  labels:
+    purpose: ckad
+    lab: "5.3"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: learnhub-selector-broken
+  namespace: triage-lab
+  labels:
+    app: learnhub-selector-broken
+    lab: "5.3"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: learnhub-selector-broken
+      component: wrong-label
+  template:
+    metadata:
+      labels:
+        app: learnhub-selector-broken
+        component: course
+        lab: "5.3"
+    spec:
+      containers:
+        - name: course-service
+          image: learnhub/course-service:0.1.0
+          ports:
+            - name: http
+              containerPort: 8080

@@ -1,0 +1,233 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: networkpolicy-lab
+  labels:
+    purpose: ckad
+    lab: "4.3"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: learnhub-network-backend
+  namespace: networkpolicy-lab
+  labels:
+    app: learnhub-network-backend
+    role: backend
+    lab: "4.3"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: learnhub-network-backend
+  template:
+    metadata:
+      labels:
+        app: learnhub-network-backend
+        role: backend
+        lab: "4.3"
+    spec:
+      containers:
+        - name: course-service
+          image: learnhub/course-service:0.1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: SERVICE_NAME
+              value: course-service-network
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: learnhub-network-backend
+  namespace: networkpolicy-lab
+  labels:
+    app: learnhub-network-backend
+    role: backend
+    lab: "4.3"
+spec:
+  type: ClusterIP
+  selector:
+    app: learnhub-network-backend
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: learnhub-network-frontend
+  namespace: networkpolicy-lab
+  labels:
+    app: learnhub-network-client
+    role: frontend
+    lab: "4.3"
+spec:
+  containers:
+    - name: curl
+      image: curlimages/curl:8.10.1
+      imagePullPolicy: IfNotPresent
+      command:
+        - sh
+        - -c
+        - sleep 3600
+      resources:
+        requests:
+          cpu: 10m
+          memory: 16Mi
+        limits:
+          cpu: 50m
+          memory: 32Mi
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: learnhub-network-intruder
+  namespace: networkpolicy-lab
+  labels:
+    app: learnhub-network-client
+    role: intruder
+    lab: "4.3"
+spec:
+  containers:
+    - name: curl
+      image: curlimages/curl:8.10.1
+      imagePullPolicy: IfNotPresent
+      command:
+        - sh
+        - -c
+        - sleep 3600
+      resources:
+        requests:
+          cpu: 10m
+          memory: 16Mi
+        limits:
+          cpu: 50m
+          memory: 32Mi
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: learnhub-network-backend-debug
+  namespace: networkpolicy-lab
+  labels:
+    app: learnhub-network-debug
+    role: backend
+    component: debug
+    lab: "4.3"
+spec:
+  containers:
+    - name: curl
+      image: curlimages/curl:8.10.1
+      imagePullPolicy: IfNotPresent
+      command:
+        - sh
+        - -c
+        - sleep 3600
+      resources:
+        requests:
+          cpu: 10m
+          memory: 16Mi
+        limits:
+          cpu: 50m
+          memory: 32Mi
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress-egress
+  namespace: networkpolicy-lab
+  labels:
+    lab: "4.3"
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-frontend-to-backend
+  namespace: networkpolicy-lab
+  labels:
+    lab: "4.3"
+spec:
+  podSelector:
+    matchLabels:
+      app: learnhub-network-backend
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              role: frontend
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-frontend-egress-to-backend-and-dns
+  namespace: networkpolicy-lab
+  labels:
+    lab: "4.3"
+spec:
+  podSelector:
+    matchLabels:
+      role: frontend
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: learnhub-network-backend
+      ports:
+        - protocol: TCP
+          port: 8080
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-backend-egress
+  namespace: networkpolicy-lab
+  labels:
+    lab: "4.3"
+spec:
+  podSelector:
+    matchLabels:
+      role: backend
+  policyTypes:
+    - Egress
+  egress: []
