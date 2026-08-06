@@ -57,6 +57,7 @@ jobs:
       contents: read
       packages: write
     strategy:
+      max-parallel: 2
       matrix:
         service:
           - user-service
