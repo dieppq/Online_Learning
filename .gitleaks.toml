@@ -1,0 +1,10 @@
+[allowlist]
+description = "Kubernetes label selectors are not API credentials"
+condition = "AND"
+paths = [
+  '''docs/lab_1\.4\.md''',
+  '''scripts/labs/run-lab-1\.4\.ps1''',
+]
+regexes = [
+  '''api,exposure=internal''',
+]
