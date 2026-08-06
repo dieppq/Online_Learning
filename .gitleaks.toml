@@ -1,3 +1,6 @@
+[extend]
+useDefault = true
+
 [allowlist]
 description = "Kubernetes label selectors are not API credentials"
 condition = "AND"
