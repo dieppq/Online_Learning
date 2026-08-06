@@ -4,16 +4,22 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/minio/minio-go/v7"
 	"learnhub/internal/platform"
 )
 
-type app struct{ db *sql.DB }
+type app struct {
+	db      *sql.DB
+	objects *minio.Client
+	bucket  string
+}
 
 func main() {
 	db, err := platform.OpenPostgres(context.Background())
@@ -21,19 +27,32 @@ func main() {
 		log.Fatalf("connect course database: %v", err)
 	}
 	defer db.Close()
-	a := &app{db: db}
+	objects, bucket, err := platform.OpenMinIO(context.Background())
+	if err != nil {
+		log.Fatalf("connect minio: %v", err)
+	}
+	a := &app{db: db, objects: objects, bucket: bucket}
 	svc := platform.NewService("course-service")
 	mux := http.NewServeMux()
 	platform.RegisterHealth(mux, svc, map[string]string{
 		"postgres_host":  platform.Env("POSTGRES_HOST", "course-postgresql"),
 		"minio_endpoint": platform.Env("MINIO_ENDPOINT", "minio:9000"),
+	}, map[string]platform.ReadinessCheck{
+		"postgres": db.PingContext,
+		"minio": func(ctx context.Context) error {
+			exists, err := objects.BucketExists(ctx, bucket)
+			if err == nil && !exists {
+				return fmt.Errorf("bucket %s does not exist", bucket)
+			}
+			return err
+		},
 	})
 	mux.HandleFunc("/api/courses", a.courses)
 	mux.HandleFunc("/api/courses/", a.courseByID)
 	mux.HandleFunc("/cpu-burn", cpuBurn(svc))
 	platform.RegisterIndex(mux, svc, []string{
 		"GET /api/courses", "POST /api/courses", "GET /api/courses/{id}",
-		"POST /api/courses/{id}/lessons", "GET /cpu-burn?ms=500", "GET /healthz", "GET /readyz",
+		"POST /api/courses/{id}/lessons", "PUT|GET /api/courses/{id}/lessons/{lessonId}/content", "GET /cpu-burn?ms=500", "GET /healthz", "GET /readyz", "GET /metrics",
 	})
 	platform.ServeHTTP(svc, mux)
 }
@@ -87,6 +106,10 @@ func (a *app) courses(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *app) courseByID(w http.ResponseWriter, r *http.Request) {
+	if strings.Contains(r.URL.Path, "/lessons/") && strings.HasSuffix(r.URL.Path, "/content") {
+		a.lessonContent(w, r)
+		return
+	}
 	if strings.HasSuffix(r.URL.Path, "/lessons") {
 		a.addLesson(w, r)
 		return
@@ -105,7 +128,7 @@ func (a *app) courseByID(w http.ResponseWriter, r *http.Request) {
 		platform.WriteJSON(w, http.StatusNotFound, map[string]any{"error": "course_not_found"})
 		return
 	}
-	rows, err := a.db.QueryContext(r.Context(), `SELECT id, title, duration_minutes FROM lessons WHERE course_id=$1 ORDER BY position`, id)
+	rows, err := a.db.QueryContext(r.Context(), `SELECT id, title, duration_minutes, content_object_key IS NOT NULL FROM lessons WHERE course_id=$1 ORDER BY position`, id)
 	if err != nil {
 		writeDBError(w, err)
 		return
@@ -115,13 +138,80 @@ func (a *app) courseByID(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var lessonID, lessonTitle string
 		var duration int
-		if err := rows.Scan(&lessonID, &lessonTitle, &duration); err != nil {
+		var hasContent bool
+		if err := rows.Scan(&lessonID, &lessonTitle, &duration, &hasContent); err != nil {
 			writeDBError(w, err)
 			return
 		}
-		lessons = append(lessons, map[string]any{"id": lessonID, "title": lessonTitle, "duration_minutes": duration})
+		lesson := map[string]any{"id": lessonID, "title": lessonTitle, "duration_minutes": duration, "has_content": hasContent}
+		if hasContent {
+			lesson["content_url"] = "/api/courses/" + id + "/lessons/" + lessonID + "/content"
+		}
+		lessons = append(lessons, lesson)
 	}
 	platform.WriteJSON(w, http.StatusOK, map[string]any{"id": id, "title": title, "description": description, "price": price, "status": status, "lessons": lessons})
+}
+
+func (a *app) lessonContent(w http.ResponseWriter, r *http.Request) {
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) != 6 || parts[0] != "api" || parts[1] != "courses" || parts[3] != "lessons" || parts[5] != "content" {
+		platform.WriteJSON(w, http.StatusNotFound, map[string]any{"error": "lesson_not_found"})
+		return
+	}
+	courseID, lessonID := parts[2], parts[4]
+	switch r.Method {
+	case http.MethodPut:
+		contentType := r.Header.Get("Content-Type")
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, 20<<20)
+		objectKey := courseID + "/" + lessonID + "/content"
+		info, err := a.objects.PutObject(r.Context(), a.bucket, objectKey, r.Body, -1, minio.PutObjectOptions{ContentType: contentType, PartSize: 5 << 20})
+		if err != nil {
+			log.Printf("minio upload failed: %v", err)
+			platform.WriteJSON(w, http.StatusBadGateway, map[string]any{"error": "object_store_error"})
+			return
+		}
+		result, err := a.db.ExecContext(r.Context(), `UPDATE lessons SET content_object_key=$3,content_type=$4,content_size=$5 WHERE id=$1 AND course_id=$2`, lessonID, courseID, objectKey, contentType, info.Size)
+		if err != nil {
+			_ = a.objects.RemoveObject(r.Context(), a.bucket, objectKey, minio.RemoveObjectOptions{})
+			writeDBError(w, err)
+			return
+		}
+		rows, _ := result.RowsAffected()
+		if rows == 0 {
+			_ = a.objects.RemoveObject(r.Context(), a.bucket, objectKey, minio.RemoveObjectOptions{})
+			platform.WriteJSON(w, http.StatusNotFound, map[string]any{"error": "lesson_not_found"})
+			return
+		}
+		platform.WriteJSON(w, http.StatusCreated, map[string]any{"course_id": courseID, "lesson_id": lessonID, "bucket": a.bucket, "object_key": objectKey, "content_type": contentType, "size": info.Size})
+	case http.MethodGet:
+		var objectKey, contentType string
+		var size int64
+		if err := a.db.QueryRowContext(r.Context(), `SELECT content_object_key,content_type,content_size FROM lessons WHERE id=$1 AND course_id=$2 AND content_object_key IS NOT NULL`, lessonID, courseID).Scan(&objectKey, &contentType, &size); err != nil {
+			platform.WriteJSON(w, http.StatusNotFound, map[string]any{"error": "lesson_content_not_found"})
+			return
+		}
+		object, err := a.objects.GetObject(r.Context(), a.bucket, objectKey, minio.GetObjectOptions{})
+		if err != nil {
+			platform.WriteJSON(w, http.StatusBadGateway, map[string]any{"error": "object_store_error"})
+			return
+		}
+		defer object.Close()
+		if _, err := object.Stat(); err != nil {
+			platform.WriteJSON(w, http.StatusBadGateway, map[string]any{"error": "object_store_error"})
+			return
+		}
+		w.Header().Set("Content-Type", contentType)
+		w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
+		if _, err := io.Copy(w, object); err != nil {
+			log.Printf("stream lesson content failed: %v", err)
+		}
+	default:
+		w.Header().Set("Allow", "GET, PUT")
+		platform.WriteJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "method_not_allowed"})
+	}
 }
 
 func (a *app) addLesson(w http.ResponseWriter, r *http.Request) {

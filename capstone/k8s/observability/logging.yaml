@@ -1,0 +1,253 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: learnhub-loki-config
+  labels:
+    app.kubernetes.io/name: loki
+    app.kubernetes.io/part-of: learnhub
+    app.kubernetes.io/component: observability
+data:
+  loki.yaml: |
+    auth_enabled: false
+    server:
+      http_listen_port: 3100
+    common:
+      path_prefix: /loki
+      replication_factor: 1
+      ring:
+        kvstore:
+          store: inmemory
+      storage:
+        filesystem:
+          chunks_directory: /loki/chunks
+          rules_directory: /loki/rules
+    schema_config:
+      configs:
+        - from: "2024-01-01"
+          store: tsdb
+          object_store: filesystem
+          schema: v13
+          index:
+            prefix: index_
+            period: 24h
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: loki-data
+  labels:
+    app.kubernetes.io/name: loki
+    app.kubernetes.io/part-of: learnhub
+    app.kubernetes.io/component: observability
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 512Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loki
+  labels:
+    app.kubernetes.io/name: loki
+    app.kubernetes.io/part-of: learnhub
+    app.kubernetes.io/component: observability
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: loki
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: loki
+        app.kubernetes.io/part-of: learnhub
+        app.kubernetes.io/component: observability
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: loki
+          image: grafana/loki:3.2.1
+          args:
+            - -config.file=/etc/loki/loki.yaml
+          ports:
+            - name: http
+              containerPort: 3100
+          volumeMounts:
+            - name: config
+              mountPath: /etc/loki
+              readOnly: true
+            - name: data
+              mountPath: /loki
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {cpu: 500m, memory: 512Mi}
+          readinessProbe:
+            httpGet: {path: /ready, port: http}
+          livenessProbe:
+            httpGet: {path: /ready, port: http}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: config
+          configMap:
+            name: learnhub-loki-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: loki-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: loki
+  labels:
+    app.kubernetes.io/name: loki
+    app.kubernetes.io/part-of: learnhub
+    app.kubernetes.io/component: observability
+spec:
+  selector:
+    app.kubernetes.io/name: loki
+  ports:
+    - name: http
+      port: 3100
+      targetPort: http
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: learnhub-log-agent
+  labels:
+    app.kubernetes.io/name: fluent-bit
+    app.kubernetes.io/part-of: learnhub
+    app.kubernetes.io/component: observability
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: learnhub-log-agent
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces", "pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: learnhub-log-agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: learnhub-log-agent
+subjects:
+  - kind: ServiceAccount
+    name: learnhub-log-agent
+    namespace: learnhub-capstone-dev
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: learnhub-fluent-bit-config
+  labels:
+    app.kubernetes.io/name: fluent-bit
+    app.kubernetes.io/part-of: learnhub
+    app.kubernetes.io/component: observability
+data:
+  fluent-bit.conf: |
+    [SERVICE]
+        Flush         1
+        Log_Level     info
+        Parsers_File  parsers.conf
+
+    [INPUT]
+        Name              tail
+        Path              /var/log/containers/*_learnhub-capstone-dev_*.log
+        Parser            cri
+        Tag               kube.*
+        Mem_Buf_Limit     20MB
+        Skip_Long_Lines   On
+
+    [FILTER]
+        Name                kubernetes
+        Match               kube.*
+        Kube_Tag_Prefix     kube.var.log.containers.
+        Merge_Log           On
+        Keep_Log            Off
+
+    [OUTPUT]
+        Name          loki
+        Match         kube.*
+        Host          loki
+        Port          3100
+        Labels        job=fluent-bit,cluster=learnhub-local
+        Auto_Kubernetes_Labels On
+  parsers.conf: |
+    [PARSER]
+        Name        cri
+        Format      regex
+        Regex       ^(?<time>[^ ]+) (?<stream>stdout|stderr) (?<logtag>[^ ]*) (?<log>.*)$
+        Time_Key    time
+        Time_Format %Y-%m-%dT%H:%M:%S.%L%z
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: fluent-bit
+  labels:
+    app.kubernetes.io/name: fluent-bit
+    app.kubernetes.io/part-of: learnhub
+    app.kubernetes.io/component: observability
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: fluent-bit
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: fluent-bit
+        app.kubernetes.io/part-of: learnhub
+        app.kubernetes.io/component: observability
+    spec:
+      serviceAccountName: learnhub-log-agent
+      terminationGracePeriodSeconds: 10
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: fluent-bit
+          image: fluent/fluent-bit:3.1.9
+          volumeMounts:
+            - name: config
+              mountPath: /fluent-bit/etc
+              readOnly: true
+            - name: varlog
+              mountPath: /var/log
+              readOnly: true
+          resources:
+            requests: {cpu: 20m, memory: 32Mi}
+            limits: {cpu: 200m, memory: 128Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: config
+          configMap:
+            name: learnhub-fluent-bit-config
+        - name: varlog
+          hostPath:
+            path: /var/log
+            type: Directory

@@ -6,7 +6,7 @@ metadata:
     app.kubernetes.io/name: web-ui
     app.kubernetes.io/part-of: learnhub
     app.kubernetes.io/component: frontend
-    app.kubernetes.io/version: "0.1.2"
+    app.kubernetes.io/version: "0.2.0"
 spec:
   replicas: 1
   minReadySeconds: 5
@@ -25,7 +25,7 @@ spec:
         app.kubernetes.io/name: web-ui
         app.kubernetes.io/part-of: learnhub
         app.kubernetes.io/component: frontend
-        app.kubernetes.io/version: "0.1.2"
+        app.kubernetes.io/version: "0.2.0"
     spec:
       serviceAccountName: learnhub-app
       automountServiceAccountToken: false
@@ -45,7 +45,7 @@ spec:
           emptyDir: {}
       containers:
         - name: web
-          image: learnhub/web-ui:0.1.2
+          image: learnhub/web-ui:0.2.0
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

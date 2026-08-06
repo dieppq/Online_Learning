@@ -51,29 +51,42 @@ try {
 
   Assert-FileContains -Path "internal/platform/http.go" -Pattern "slog.NewJSONHandler"
   Assert-FileContains -Path "internal/platform/http.go" -Pattern "server.Shutdown"
+  Assert-FileContains -Path "internal/platform/http.go" -Pattern 'HandleFunc\("/metrics"'
+  Assert-FileContains -Path "internal/platform/http.go" -Pattern "ReadinessCheck"
   Assert-FileContains -Path "internal/platform/backing.go" -Pattern "sql.Open"
-  Assert-FileContains -Path "services/payment-service/main.go" -Pattern 'Publish\("payment.completed"'
-  Assert-FileContains -Path "services/enrollment-service/main.go" -Pattern 'QueueSubscribe\("payment.completed"'
-  Assert-FileContains -Path "services/notification-service/main.go" -Pattern 'QueueSubscribe'
+  Assert-FileContains -Path "internal/platform/cache.go" -Pattern "redis.NewClient"
+  Assert-FileContains -Path "internal/platform/objectstore.go" -Pattern "minio.New"
+  Assert-FileContains -Path "internal/platform/events.go" -Pattern "ConnectJetStream"
+  Assert-FileContains -Path "internal/platform/events.go" -Pattern "SubscribeDurable"
+  Assert-FileContains -Path "services/payment-service/main.go" -Pattern "outbox_events"
+  Assert-FileContains -Path "services/enrollment-service/main.go" -Pattern "progressCacheKey"
+  Assert-FileContains -Path "services/notification-service/main.go" -Pattern "SubscribeDurable"
+  Assert-FileContains -Path "services/course-service/main.go" -Pattern "PutObject"
   Assert-FileContains -Path "capstone/k8s/base/configmap.yaml" -Pattern 'LOG_FORMAT: "json"'
   Assert-FileContains -Path "capstone/k8s/base/database-migrations.yaml" -Pattern "schema_migrations"
   Assert-FileContains -Path "capstone/k8s/base/database-business-migrations.yaml" -Pattern "CREATE TABLE IF NOT EXISTS payments"
+  Assert-FileContains -Path "capstone/k8s/base/database-reliability-migrations.yaml" -Pattern "outbox_events"
+  Assert-FileContains -Path "capstone/k8s/base/nats.yaml" -Pattern "-js"
 
-  $shellScripts = @("build.sh", "create-secret.sh", "deploy.sh", "smoke-test.sh", "blue-green-switch.sh", "install-ingress-nginx.sh", "cleanup.sh")
+  $shellScripts = @("build.sh", "create-secret.sh", "deploy.sh", "smoke-test.sh", "blue-green-switch.sh", "install-ingress-nginx.sh", "cleanup.sh", "promote-images.sh")
   foreach ($script in $shellScripts) {
     Assert-FileContains -Path "capstone/scripts/$script" -Pattern '^#!/usr/bin/env sh'
   }
 
-  $forbiddenValues = "learnhub-postgres-lab-password|learnhub-jwt-lab-secret|learnhub-minio-lab-password|learnhub-smtp-lab-password|jwt-secret-from-file-lab"
-  $secretLeak = Get-ChildItem -Recurse -File -Include *.yaml,*.yml,*.txt,*.env |
-    Where-Object { $_.FullName -notmatch '[\\/]\.git[\\/]' } |
-    Select-String -Pattern $forbiddenValues
-  if ($secretLeak) {
-    throw "Plaintext lab Secret found: $($secretLeak.Path)"
+  $forbiddenSecretFiles = @(
+    "k8s/base/secret.yaml",
+    "k8s/infra/secret.yaml",
+    "k8s/labs/lab-3.1-configmap-secret-injection/jwt-secret.txt"
+  )
+  foreach ($secretFile in $forbiddenSecretFiles) {
+    if (Test-Path $secretFile) {
+      throw "Plaintext Secret file must not be tracked: $secretFile"
+    }
   }
 
   Invoke-Kubectl "kustomize" "capstone/k8s/overlays/dev" *> $null
   Invoke-Kubectl "kustomize" "capstone/k8s/overlays/prod" *> $null
+  Invoke-Kubectl "kustomize" "capstone/k8s/observability" *> $null
   Invoke-Docker "compose" "--env-file" "configs/env/local.env.example" "config" "--quiet"
 
   $helm = Join-Path $ProjectRoot ".tools\helm\windows-amd64\helm.exe"

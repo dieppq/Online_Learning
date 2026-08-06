@@ -60,12 +60,12 @@ helm upgrade --install learnhub-course .\capstone\helm\course-service `
   --set fullnameOverride=course-service-helm `
   --set database.deploy=false `
   --set database.migration.enabled=false `
-  --set image.tag=0.2.2
+  --set image.tag=0.4.0
 
 helm upgrade learnhub-course .\capstone\helm\course-service `
   -n learnhub-capstone-dev `
   --reuse-values `
-  --set image.tag=0.3.1
+  --set image.tag=0.4.1
 
 helm history learnhub-course -n learnhub-capstone-dev
 helm rollback learnhub-course 1 -n learnhub-capstone-dev

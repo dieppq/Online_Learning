@@ -7,7 +7,7 @@ metadata:
     app.kubernetes.io/part-of: learnhub
     app.kubernetes.io/component: config
 data:
-  APP_VERSION: "0.2.1"
+  APP_VERSION: "0.3.0"
   PORT: "8080"
   LOG_LEVEL: "info"
   LOG_FORMAT: "json"
@@ -18,6 +18,7 @@ data:
   REDIS_ADDR: "redis:6379"
   NATS_URL: "nats://nats:4222"
   MINIO_ENDPOINT: "minio:9000"
+  MINIO_BUCKET: "learnhub-content"
   SMTP_HOST: "smtp.local"
   USER_SERVICE_URL: "http://user-service"
   COURSE_SERVICE_URL: "http://course-service"

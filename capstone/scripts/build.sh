@@ -2,10 +2,10 @@
 set -eu
 
 PROJECT_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
-TAG=${TAG:-0.2.1}
-COURSE_TAG=${COURSE_TAG:-0.2.2}
-GREEN_TAG=${GREEN_TAG:-0.3.1}
-WEB_TAG=${WEB_TAG:-0.1.2}
+TAG=${TAG:-0.3.0}
+COURSE_TAG=${COURSE_TAG:-0.4.0}
+GREEN_TAG=${GREEN_TAG:-0.4.1}
+WEB_TAG=${WEB_TAG:-0.2.0}
 GIT_COMMIT=${GIT_COMMIT:-$(git -C "$PROJECT_ROOT" rev-parse --verify HEAD 2>/dev/null || printf unknown)}
 BUILD_DATE=${BUILD_DATE:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}
 

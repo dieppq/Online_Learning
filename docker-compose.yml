@@ -86,7 +86,8 @@ services:
       PGPASSWORD: ${COURSE_DB_PASSWORD}
     volumes:
       - ./capstone/helm/course-service/migrations/002.sql:/migrations/002.sql:ro
-    command: ["sh", "-c", "psql -h course-postgresql -U ${COURSE_DB_USER} -d ${COURSE_DB_NAME} -v ON_ERROR_STOP=1 -c 'CREATE TABLE IF NOT EXISTS schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())' && psql -h course-postgresql -U ${COURSE_DB_USER} -d ${COURSE_DB_NAME} -v ON_ERROR_STOP=1 -f /migrations/002.sql"]
+      - ./capstone/helm/course-service/migrations/003.sql:/migrations/003.sql:ro
+    command: ["sh", "-c", "psql -h course-postgresql -U ${COURSE_DB_USER} -d ${COURSE_DB_NAME} -v ON_ERROR_STOP=1 -c 'CREATE TABLE IF NOT EXISTS schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())' && psql -h course-postgresql -U ${COURSE_DB_USER} -d ${COURSE_DB_NAME} -v ON_ERROR_STOP=1 -f /migrations/002.sql && psql -h course-postgresql -U ${COURSE_DB_USER} -d ${COURSE_DB_NAME} -v ON_ERROR_STOP=1 -f /migrations/003.sql"]
     depends_on:
       course-postgresql:
         condition: service_healthy
@@ -97,7 +98,8 @@ services:
       PGPASSWORD: ${ENROLLMENT_DB_PASSWORD}
     volumes:
       - ./capstone/helm/enrollment-service/migrations/002.sql:/migrations/002.sql:ro
-    command: ["sh", "-c", "psql -h enrollment-postgresql -U ${ENROLLMENT_DB_USER} -d ${ENROLLMENT_DB_NAME} -v ON_ERROR_STOP=1 -c 'CREATE TABLE IF NOT EXISTS schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())' && psql -h enrollment-postgresql -U ${ENROLLMENT_DB_USER} -d ${ENROLLMENT_DB_NAME} -v ON_ERROR_STOP=1 -f /migrations/002.sql"]
+      - ./capstone/helm/enrollment-service/migrations/003.sql:/migrations/003.sql:ro
+    command: ["sh", "-c", "psql -h enrollment-postgresql -U ${ENROLLMENT_DB_USER} -d ${ENROLLMENT_DB_NAME} -v ON_ERROR_STOP=1 -c 'CREATE TABLE IF NOT EXISTS schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())' && psql -h enrollment-postgresql -U ${ENROLLMENT_DB_USER} -d ${ENROLLMENT_DB_NAME} -v ON_ERROR_STOP=1 -f /migrations/002.sql && psql -h enrollment-postgresql -U ${ENROLLMENT_DB_USER} -d ${ENROLLMENT_DB_NAME} -v ON_ERROR_STOP=1 -f /migrations/003.sql"]
     depends_on:
       enrollment-postgresql:
         condition: service_healthy
@@ -108,7 +110,8 @@ services:
       PGPASSWORD: ${PAYMENT_DB_PASSWORD}
     volumes:
       - ./capstone/helm/payment-service/migrations/002.sql:/migrations/002.sql:ro
-    command: ["sh", "-c", "psql -h payment-postgresql -U ${PAYMENT_DB_USER} -d ${PAYMENT_DB_NAME} -v ON_ERROR_STOP=1 -c 'CREATE TABLE IF NOT EXISTS schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())' && psql -h payment-postgresql -U ${PAYMENT_DB_USER} -d ${PAYMENT_DB_NAME} -v ON_ERROR_STOP=1 -f /migrations/002.sql"]
+      - ./capstone/helm/payment-service/migrations/003.sql:/migrations/003.sql:ro
+    command: ["sh", "-c", "psql -h payment-postgresql -U ${PAYMENT_DB_USER} -d ${PAYMENT_DB_NAME} -v ON_ERROR_STOP=1 -c 'CREATE TABLE IF NOT EXISTS schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())' && psql -h payment-postgresql -U ${PAYMENT_DB_USER} -d ${PAYMENT_DB_NAME} -v ON_ERROR_STOP=1 -f /migrations/002.sql && psql -h payment-postgresql -U ${PAYMENT_DB_USER} -d ${PAYMENT_DB_NAME} -v ON_ERROR_STOP=1 -f /migrations/003.sql"]
     depends_on:
       payment-postgresql:
         condition: service_healthy
@@ -136,10 +139,12 @@ services:
 
   nats:
     image: nats:2.10-alpine
-    command: ["-js", "-m", "8222"]
+    command: ["-js", "-sd", "/data", "-m", "8222"]
     ports:
       - "4222:4222"
       - "8222:8222"
+    volumes:
+      - nats-data:/data
 
   minio:
     image: minio/minio:RELEASE.2024-10-29T16-01-48Z
@@ -152,6 +157,11 @@ services:
       - "9001:9001"
     volumes:
       - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
   user-service:
     build:
@@ -206,13 +216,16 @@ services:
       POSTGRES_USER: ${COURSE_DB_USER}
       POSTGRES_PASSWORD: ${COURSE_DB_PASSWORD}
       MINIO_ENDPOINT: minio:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: learnhub-content
     ports:
       - "8082:8080"
     depends_on:
       course-db-migrate:
         condition: service_completed_successfully
       minio:
-        condition: service_started
+        condition: service_healthy
 
   enrollment-service:
     build:
@@ -319,4 +332,5 @@ volumes:
   enrollment-postgresql-data:
   payment-postgresql-data:
   notification-postgresql-data:
+  nats-data:
   minio-data:

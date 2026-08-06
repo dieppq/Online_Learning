@@ -6,7 +6,7 @@ metadata:
     app.kubernetes.io/name: course-service
     app.kubernetes.io/part-of: learnhub
     app.kubernetes.io/component: api
-    app.kubernetes.io/version: "0.2.2"
+    app.kubernetes.io/version: "0.4.0"
     track: blue
 spec:
   replicas: 2
@@ -27,7 +27,7 @@ spec:
         app.kubernetes.io/name: course-service
         app.kubernetes.io/part-of: learnhub
         app.kubernetes.io/component: api
-        app.kubernetes.io/version: "0.2.2"
+        app.kubernetes.io/version: "0.4.0"
         track: blue
         learnhub.io/owner: course-service
     spec:
@@ -58,7 +58,7 @@ spec:
               mkdir -p /runtime
               {
                 echo SERVICE_NAME=course-service
-                echo APP_VERSION=0.2.2
+                echo APP_VERSION=0.4.0
                 echo COURSE_TRACK=blue
                 echo CONFIG_SOURCE=init-container
               } > /runtime/app.env
@@ -117,7 +117,7 @@ spec:
                 - ALL
       containers:
         - name: main
-          image: learnhub/course-service:0.2.2
+          image: learnhub/course-service:0.4.0
           imagePullPolicy: IfNotPresent
           ports:
             - name: main-http
@@ -133,7 +133,7 @@ spec:
             - name: SERVICE_NAME
               value: course-service
             - name: APP_VERSION
-              value: "0.2.2"
+              value: "0.4.0"
             - name: COURSE_TRACK
               value: blue
             - name: POSTGRES_HOST

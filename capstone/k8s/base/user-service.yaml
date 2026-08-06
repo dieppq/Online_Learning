@@ -6,7 +6,7 @@ metadata:
     app.kubernetes.io/name: user-service
     app.kubernetes.io/part-of: learnhub
     app.kubernetes.io/component: api
-    app.kubernetes.io/version: "0.2.1"
+    app.kubernetes.io/version: "0.3.0"
 spec:
   replicas: 2
   minReadySeconds: 5
@@ -25,7 +25,7 @@ spec:
         app.kubernetes.io/name: user-service
         app.kubernetes.io/part-of: learnhub
         app.kubernetes.io/component: api
-        app.kubernetes.io/version: "0.2.1"
+        app.kubernetes.io/version: "0.3.0"
         learnhub.io/owner: user-service
     spec:
       serviceAccountName: learnhub-app
@@ -73,7 +73,7 @@ spec:
                 - ALL
       containers:
         - name: main
-          image: learnhub/user-service:0.2.1
+          image: learnhub/user-service:0.3.0
           imagePullPolicy: IfNotPresent
           ports:
             - name: main-http

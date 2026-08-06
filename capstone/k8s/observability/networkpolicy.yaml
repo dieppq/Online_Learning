@@ -1,0 +1,65 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-observability
+  labels:
+    app.kubernetes.io/name: allow-observability
+    app.kubernetes.io/part-of: learnhub
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: observability
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: learnhub
+      ports:
+        - {protocol: TCP, port: 3000}
+        - {protocol: TCP, port: 3100}
+        - {protocol: TCP, port: 9090}
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: learnhub
+      ports:
+        - {protocol: TCP, port: 80}
+        - {protocol: TCP, port: 3000}
+        - {protocol: TCP, port: 3100}
+        - {protocol: TCP, port: 8080}
+        - {protocol: TCP, port: 9090}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-fluent-bit-kubernetes-api
+  labels:
+    app.kubernetes.io/name: allow-fluent-bit-kubernetes-api
+    app.kubernetes.io/part-of: learnhub
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: fluent-bit
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - {protocol: TCP, port: 443}
+        - {protocol: TCP, port: 6443}

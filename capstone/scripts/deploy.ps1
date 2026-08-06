@@ -45,7 +45,10 @@ try {
     "course-db-migrate-v002",
     "enrollment-db-migrate-v002",
     "payment-db-migrate-v002",
-    "notification-db-migrate-v002"
+    "notification-db-migrate-v002",
+    "course-db-migrate-v003",
+    "enrollment-db-migrate-v003",
+    "payment-db-migrate-v003"
   )
 
   foreach ($job in $migrationJobs) {

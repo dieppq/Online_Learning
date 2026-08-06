@@ -28,6 +28,8 @@ func main() {
 	platform.RegisterHealth(mux, svc, map[string]string{
 		"postgres_host": platform.Env("POSTGRES_HOST", "user-postgresql"),
 		"jwt_issuer":    platform.Env("JWT_ISSUER", "learnhub"),
+	}, map[string]platform.ReadinessCheck{
+		"postgres": db.PingContext,
 	})
 	mux.HandleFunc("/api/users", a.listUsers)
 	mux.HandleFunc("/api/users/register", a.registerUser)

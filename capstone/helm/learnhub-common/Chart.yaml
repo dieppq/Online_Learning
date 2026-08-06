@@ -2,4 +2,4 @@ apiVersion: v2
 name: learnhub-common
 description: Shared Helm templates for LearnHub application services
 type: library
-version: 0.3.0
+version: 0.4.0

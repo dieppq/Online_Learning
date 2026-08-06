@@ -9,14 +9,14 @@ Tai lieu nay map 12-Factor App vao code, container va Kubernetes cua LearnHub. D
 | 1. Codebase | Mot Git repository, moi service co Dockerfile va Helm chart rieng | `git remote -v`; `git status` |
 | 2. Dependencies | Go module, image base co version, multi-stage build, chart dependency co `Chart.lock` | `go test ./...`; `helm dependency list <chart>` |
 | 3. Config | Runtime config tu ConfigMap/Secret/env; khong bake credential vao image | `kubectl describe configmap learnhub-config -n learnhub-capstone-dev` |
-| 4. Backing services | PostgreSQL per service, Redis, NATS va MinIO duoc tham chieu qua DNS/env | `kubectl get svc -n learnhub-capstone-dev` |
-| 5. Build, release, run | Build gan version/commit/build time vao binary va OCI labels; release dung image tag va Deployment label | `docker image inspect learnhub/user-service:0.2.1`; `curl http://localhost/api/users` |
+| 4. Backing services | PostgreSQL per service; Redis cache, MinIO object store va NATS JetStream/outbox duoc su dung trong business flow | `sh capstone/scripts/smoke-test.sh` |
+| 5. Build, release, run | CI build/push GHCR theo SHA, tao provenance/SBOM; promotion script chi chap nhan image digest | `.github/workflows/ci.yml`; `capstone/scripts/promote-images.sh` |
 | 6. Processes | API process stateless; state quan trong thuoc PostgreSQL/Redis/MinIO/PVC | `kubectl scale deploy user-service --replicas=3 -n learnhub-capstone-dev` |
 | 7. Port binding | Moi Go service bind `PORT`; Kubernetes Service map `80` sang named container port | `kubectl get svc user-service -n learnhub-capstone-dev -o yaml` |
 | 8. Concurrency | Deployment replica va HPA scale theo process; khong tao thread/worker bang config dac biet | `kubectl get deploy,hpa -n learnhub-capstone-dev` |
 | 9. Disposability | Startup probe, rolling update, `SIGTERM` graceful shutdown 10 giay, termination grace 30 giay | `kubectl rollout restart deploy/user-service -n learnhub-capstone-dev` |
 | 10. Dev/prod parity | Compose va Kubernetes deu dung PostgreSQL per service va cung image/service config contract | `docker compose --env-file configs/env/local.env.example config --quiet` |
-| 11. Logs | App ghi JSON event stream ra stdout/stderr; request co `X-Request-ID`; platform thu thap log | `kubectl logs -l app.kubernetes.io/name=user-service -c main -n learnhub-capstone-dev --prefix=true` |
+| 11. Logs | App ghi JSON stdout/stderr; Fluent Bit thu log node-level vao Loki; Grafana query log va Prometheus metrics | `kubectl apply -k capstone/k8s/observability` |
 | 12. Admin processes | Migration la Job versioned, dung cung Secret va backing service cua app | `kubectl get job -l app.kubernetes.io/component=migration -n learnhub-capstone-dev` |
 
 ## Build and release
@@ -25,11 +25,11 @@ Build script tao image co ba metadata: `APP_VERSION`, Git SHA va UTC build time.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\capstone\scripts\build.ps1
-docker image inspect learnhub/user-service:0.2.1 --format '{{json .Config.Labels}}'
+docker image inspect learnhub/user-service:0.3.0 --format '{{json .Config.Labels}}'
 kubectl get deploy user-service -n learnhub-capstone-dev -o jsonpath='{.spec.template.metadata.labels.app\.kubernetes\.io/version}'
 ```
 
-CI tai `.github/workflows/ci.yml` test Go, render Kustomize, lint Helm, validate Compose va build tung service image. Production pipeline can push immutable tag theo Git SHA, scan/sign image, sau do promote cung digest qua staging va production.
+CI tai `.github/workflows/ci.yml` test Go, render Kustomize, lint Helm, validate Compose, quet Git history bang Gitleaks va build/push tung service image len GHCR theo full Git SHA. BuildKit tao provenance va SBOM; digest duoc ghi vao workflow summary. `promote-images.ps1|sh` bat buoc `sha256` digest de cung artifact duoc promote qua cac environment ma khong rebuild.
 
 ## Local parity
 
@@ -44,20 +44,22 @@ Compose khong expose PostgreSQL ra host. Moi app chi ket noi database cua chinh 
 
 ## Logs
 
-Application khong tu ghi, rotate hay gui log den vendor. Go service ghi JSON ra stdout; Kubernetes/container runtime quan ly stream. `LOG_LEVEL`, `LOG_FORMAT` va `LOG_HEALTH_REQUESTS` la runtime config.
+Application khong tu ghi, rotate hay gui log den vendor. Go service ghi JSON ra stdout; Kubernetes/container runtime quan ly stream. `LOG_LEVEL`, `LOG_FORMAT` va `LOG_HEALTH_REQUESTS` la runtime config. Optional stack tai `capstone/k8s/observability` dung Fluent Bit DaemonSet de thu log node-level vao Loki, Prometheus scrape `/metrics`, va Grafana provision san hai datasource.
 
 ```powershell
 kubectl logs deploy/user-service -n learnhub-capstone-dev -c main --tail=100
 kubectl logs -l app.kubernetes.io/part-of=learnhub -n learnhub-capstone-dev --all-containers=true --prefix=true --since=10m
 curl.exe -i -H "X-Request-ID: demo-12-factor" http://localhost/api/users
 kubectl logs deploy/user-service -n learnhub-capstone-dev -c main | Select-String demo-12-factor
+kubectl apply -k .\capstone\k8s\observability
+kubectl port-forward svc/grafana 3000:3000 -n learnhub-capstone-dev
 ```
 
 Production nen cai log agent theo node, vi du Fluent Bit hoac Vector, gui stdout stream den Loki/OpenSearch/Elastic/managed logging. Khong them sidecar logging cho moi app neu node-level agent da thu thap duoc container log.
 
 ## Admin process and migrations
 
-Moi service co Job migration `v001` tao ledger va `v002` tao business schema/seed. API doc/ghi database rieng cua service; payment/enrollment/notification trao doi event qua NATS.
+Moi service co Job migration `v001` tao ledger va `v002` tao business schema/seed. Migration `v003` them metadata MinIO va outbox. API doc/ghi database rieng cua service; payment/enrollment/notification trao doi event qua JetStream durable consumer.
 
 ```powershell
 kubectl wait --for=condition=complete job/user-db-migrate-v001 -n learnhub-capstone-dev --timeout=180s
@@ -81,6 +83,6 @@ Script kiem tra source contract, render dev/prod, Compose config, lint tat ca He
 - Dung external secret manager va workload identity; Secret script hien tai chi danh cho local lab.
 - Dung managed PostgreSQL hoac StatefulSet/operator co backup, restore va HA; Deployment PostgreSQL hien tai chi danh cho lab.
 - Push image vao private registry theo immutable digest; khong dung local image cache.
-- Bo sung migration rollback/data backfill policy va transactional outbox/JetStream cho delivery guarantee production.
-- Bo sung metrics, distributed tracing, central log backend, alert va SLO.
+- Bo sung migration rollback/data backfill policy, dead-letter workflow va event schema registry cho production.
+- Metrics va central log backend da co baseline; production can alert rules, SLO va distributed tracing.
 - Gan TLS, DNS, Ingress policy va NetworkPolicy theo CNI production.

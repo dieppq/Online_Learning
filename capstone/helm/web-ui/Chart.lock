@@ -1,6 +1,6 @@
 dependencies:
 - name: learnhub-common
   repository: file://../learnhub-common
-  version: 0.3.0
-digest: sha256:f89733631762646ae0aaddeb83f2c6fc3f9127ee0f0ebfca524b3499132dd8d6
-generated: "2026-08-06T16:01:37.896175+07:00"
+  version: 0.4.0
+digest: sha256:3a8ae87574b3afe2998da3b5f2241e48925ae5d0210dbc565f215dc2f7dec4e9
+generated: "2026-08-06T18:24:36.1511064+07:00"

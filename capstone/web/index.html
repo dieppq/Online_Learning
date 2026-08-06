@@ -220,6 +220,30 @@
               </form>
             </section>
 
+            <section class="panel">
+              <div class="panel-heading compact">
+                <div>
+                  <p class="eyebrow">PUT /api/courses/{id}/lessons/{lessonId}/content</p>
+                  <h2>Nội dung bài học</h2>
+                </div>
+              </div>
+              <form id="lessonContentForm" class="form-stack" data-submit-action="lesson-content-upload">
+                <label>
+                  <span>Course ID</span>
+                  <input name="course_id" value="c-k8s-ckad" autocomplete="off">
+                </label>
+                <label>
+                  <span>Lesson ID</span>
+                  <input name="lesson_id" value="l-01" autocomplete="off">
+                </label>
+                <label>
+                  <span>Content</span>
+                  <textarea name="content" rows="4">LearnHub lesson content stored in MinIO.</textarea>
+                </label>
+                <button class="primary-button" type="submit">Lưu vào MinIO</button>
+              </form>
+            </section>
+
             <section class="panel raw-panel">
               <div class="panel-heading compact">
                 <div>

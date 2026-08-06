@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -16,6 +17,7 @@ import (
 type app struct {
 	db *sql.DB
 	nc *nats.Conn
+	js nats.JetStreamContext
 }
 type domainEvent struct {
 	EventID    string    `json:"event_id"`
@@ -32,14 +34,15 @@ func main() {
 		log.Fatalf("connect notification database: %v", err)
 	}
 	defer db.Close()
-	nc, err := platform.ConnectNATS("notification-service")
+	nc, js, err := platform.ConnectJetStream("notification-service")
 	if err != nil {
 		log.Fatalf("connect nats: %v", err)
 	}
 	defer nc.Drain()
-	a := &app{db: db, nc: nc}
+	a := &app{db: db, nc: nc, js: js}
 	for _, subject := range []string{"payment.completed", "lesson.completed"} {
-		if _, err := nc.QueueSubscribe(subject, "notification-service", a.handleDomainEvent); err != nil {
+		durable := "notification-" + strings.ReplaceAll(subject, ".", "-")
+		if _, err := platform.SubscribeDurable(js, subject, "notification-service", durable, a.handleDomainEvent); err != nil {
 			log.Fatalf("subscribe %s: %v", subject, err)
 		}
 	}
@@ -48,7 +51,15 @@ func main() {
 	}
 	svc := platform.NewService("notification-service")
 	mux := http.NewServeMux()
-	platform.RegisterHealth(mux, svc, map[string]string{"postgres_host": platform.Env("POSTGRES_HOST", "notification-postgresql"), "nats_url": platform.Env("NATS_URL", nats.DefaultURL), "smtp_host": platform.Env("SMTP_HOST", "smtp.local")})
+	platform.RegisterHealth(mux, svc, map[string]string{"postgres_host": platform.Env("POSTGRES_HOST", "notification-postgresql"), "nats_url": platform.Env("NATS_URL", nats.DefaultURL), "smtp_host": platform.Env("SMTP_HOST", "smtp.local")}, map[string]platform.ReadinessCheck{
+		"postgres": db.PingContext,
+		"nats": func(context.Context) error {
+			if !nc.IsConnected() {
+				return fmt.Errorf("nats is not connected")
+			}
+			return nil
+		},
+	})
 	mux.HandleFunc("/api/notifications", a.listNotifications)
 	mux.HandleFunc("/api/notifications/email", a.sendEmail)
 	mux.HandleFunc("/api/notifications/course-reminder", a.sendCourseReminder)
@@ -56,23 +67,23 @@ func main() {
 	platform.ServeHTTP(svc, mux)
 }
 
-func (a *app) handleDomainEvent(msg *nats.Msg) {
+func (a *app) handleDomainEvent(msg *nats.Msg) error {
 	var event domainEvent
 	if err := json.Unmarshal(msg.Data, &event); err != nil {
 		log.Printf("invalid %s: %v", msg.Subject, err)
-		return
+		return nil
 	}
 	if event.EventID == "" {
 		log.Printf("missing event_id subject=%s", msg.Subject)
-		return
+		return nil
 	}
 	recipient := event.UserID + "@learnhub.local"
 	_, err := a.db.Exec(`INSERT INTO notifications(id,event_id,type,recipient,user_id,course_id,status) VALUES($1,$2,$3,$4,$5,$6,'queued') ON CONFLICT(event_id) DO NOTHING`, fmt.Sprintf("n-%d", time.Now().UnixNano()), event.EventID, msg.Subject, recipient, event.UserID, event.CourseID)
 	if err != nil {
-		log.Printf("consume %s event_id=%s: %v", msg.Subject, event.EventID, err)
-		return
+		return fmt.Errorf("consume %s event_id=%s: %w", msg.Subject, event.EventID, err)
 	}
 	log.Printf("event consumed subject=%s event_id=%s", msg.Subject, event.EventID)
+	return nil
 }
 
 func (a *app) listNotifications(w http.ResponseWriter, r *http.Request) {

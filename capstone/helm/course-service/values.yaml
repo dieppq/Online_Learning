@@ -5,7 +5,7 @@ component: api
 
 image:
   repository: learnhub/course-service
-  tag: "0.2.2"
+  tag: "0.4.0"
   pullPolicy: IfNotPresent
 imagePullSecrets: []
 
@@ -27,8 +27,10 @@ database:
   waitForReady: true
   migration:
     enabled: true
-    version: "002"
-    file: migrations/002.sql
+    version: "003"
+    files:
+      - migrations/002.sql
+      - migrations/003.sql
   networkPolicy:
     enabled: true
   image:
@@ -66,7 +68,10 @@ env:
     value: course-service
   - name: COURSE_TRACK
     value: blue
-podAnnotations: {}
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/path: /metrics
+  prometheus.io/port: "8080"
 podLabels:
   learnhub.io/owner: course-service
 

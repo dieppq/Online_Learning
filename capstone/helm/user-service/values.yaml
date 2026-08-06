@@ -5,7 +5,7 @@ component: api
 
 image:
   repository: learnhub/user-service
-  tag: "0.2.1"
+  tag: "0.3.0"
   pullPolicy: IfNotPresent
 imagePullSecrets: []
 
@@ -64,7 +64,10 @@ secret:
 env:
   - name: SERVICE_NAME
     value: user-service
-podAnnotations: {}
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/path: /metrics
+  prometheus.io/port: "8080"
 podLabels:
   learnhub.io/owner: user-service
 

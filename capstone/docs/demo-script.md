@@ -100,7 +100,7 @@ kubectl top pod -n learnhub-capstone-dev
 ## 6. Rolling update
 
 ```powershell
-kubectl set image deployment/user-service main=learnhub/user-service:0.2.1 -n learnhub-capstone-dev
+kubectl set image deployment/user-service main=learnhub/user-service:0.3.0 -n learnhub-capstone-dev
 kubectl rollout status deployment/user-service -n learnhub-capstone-dev
 kubectl rollout history deployment/user-service -n learnhub-capstone-dev
 ```
@@ -159,8 +159,8 @@ Expected reader log includes `learnhub-capstone-pvc-ok`.
 ```powershell
 helm dependency build .\capstone\helm\course-service
 helm lint .\capstone\helm\course-service
-helm upgrade --install learnhub-course .\capstone\helm\course-service -n learnhub-capstone-dev --set fullnameOverride=course-service-helm --set database.deploy=false --set database.migration.enabled=false --set image.tag=0.2.2
-helm upgrade learnhub-course .\capstone\helm\course-service -n learnhub-capstone-dev --reuse-values --set image.tag=0.3.1
+helm upgrade --install learnhub-course .\capstone\helm\course-service -n learnhub-capstone-dev --set fullnameOverride=course-service-helm --set database.deploy=false --set database.migration.enabled=false --set image.tag=0.4.0
+helm upgrade learnhub-course .\capstone\helm\course-service -n learnhub-capstone-dev --reuse-values --set image.tag=0.4.1
 helm history learnhub-course -n learnhub-capstone-dev
 helm rollback learnhub-course 1 -n learnhub-capstone-dev
 ```

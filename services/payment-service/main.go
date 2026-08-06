@@ -17,6 +17,7 @@ import (
 type app struct {
 	db *sql.DB
 	nc *nats.Conn
+	js nats.JetStreamContext
 }
 type paymentCompleted struct {
 	EventID    string    `json:"event_id"`
@@ -32,15 +33,26 @@ func main() {
 		log.Fatalf("connect payment database: %v", err)
 	}
 	defer db.Close()
-	nc, err := platform.ConnectNATS("payment-service")
+	nc, js, err := platform.ConnectJetStream("payment-service")
 	if err != nil {
 		log.Fatalf("connect nats: %v", err)
 	}
 	defer nc.Drain()
-	a := &app{db: db, nc: nc}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	platform.StartOutboxPublisher(ctx, db, js, "payment-service")
+	a := &app{db: db, nc: nc, js: js}
 	svc := platform.NewService("payment-service")
 	mux := http.NewServeMux()
-	platform.RegisterHealth(mux, svc, map[string]string{"postgres_host": platform.Env("POSTGRES_HOST", "payment-postgresql"), "nats_url": platform.Env("NATS_URL", nats.DefaultURL)})
+	platform.RegisterHealth(mux, svc, map[string]string{"postgres_host": platform.Env("POSTGRES_HOST", "payment-postgresql"), "nats_url": platform.Env("NATS_URL", nats.DefaultURL)}, map[string]platform.ReadinessCheck{
+		"postgres": db.PingContext,
+		"nats": func(context.Context) error {
+			if !nc.IsConnected() {
+				return fmt.Errorf("nats is not connected")
+			}
+			return nil
+		},
+	})
 	mux.HandleFunc("/api/payments", a.payments)
 	mux.HandleFunc("/api/payments/", a.paymentByID)
 	platform.RegisterIndex(mux, svc, []string{"POST /api/payments", "GET /api/payments/{id}", "POST /api/payments/{id}/confirm", "GET /healthz", "GET /readyz"})
@@ -113,24 +125,39 @@ func (a *app) confirmPayment(w http.ResponseWriter, r *http.Request) {
 		platform.WriteJSON(w, 404, map[string]any{"error": "payment_not_found"})
 		return
 	}
+	tx, err := a.db.BeginTx(r.Context(), nil)
+	if err != nil {
+		writeDBError(w, err)
+		return
+	}
+	defer tx.Rollback()
 	var userID, courseID string
 	var confirmedAt time.Time
-	err := a.db.QueryRowContext(r.Context(), `UPDATE payments SET status='completed',confirmed_at=COALESCE(confirmed_at,now()) WHERE id=$1 RETURNING user_id,course_id,confirmed_at`, id).Scan(&userID, &courseID, &confirmedAt)
+	err = tx.QueryRowContext(r.Context(), `UPDATE payments SET status='completed',confirmed_at=COALESCE(confirmed_at,now()) WHERE id=$1 RETURNING user_id,course_id,confirmed_at`, id).Scan(&userID, &courseID, &confirmedAt)
 	if err != nil {
 		platform.WriteJSON(w, 404, map[string]any{"error": "payment_not_found"})
 		return
 	}
 	event := paymentCompleted{EventID: "payment.completed:" + id, PaymentID: id, UserID: userID, CourseID: courseID, OccurredAt: confirmedAt.UTC()}
-	body, _ := json.Marshal(event)
-	if err := a.nc.Publish("payment.completed", body); err != nil {
-		platform.WriteJSON(w, 503, map[string]any{"error": "event_publish_failed"})
+	body, err := json.Marshal(event)
+	if err != nil {
+		platform.WriteJSON(w, 500, map[string]any{"error": "event_encode_failed"})
 		return
 	}
-	if err := a.nc.Flush(); err != nil {
-		platform.WriteJSON(w, 503, map[string]any{"error": "event_publish_failed"})
+	if _, err := tx.ExecContext(r.Context(), `INSERT INTO outbox_events(id,subject,payload) VALUES($1,'payment.completed',$2) ON CONFLICT(id) DO NOTHING`, event.EventID, body); err != nil {
+		writeDBError(w, err)
 		return
 	}
-	platform.WriteJSON(w, 200, map[string]any{"id": id, "status": "completed", "event": "payment.completed", "event_id": event.EventID, "published_to": platform.Env("NATS_URL", nats.DefaultURL), "confirmed_at": confirmedAt.UTC().Format(time.RFC3339)})
+	if err := tx.Commit(); err != nil {
+		writeDBError(w, err)
+		return
+	}
+	delivery := "published"
+	if _, err := platform.PublishOutboxBatch(r.Context(), a.db, a.js, 25); err != nil {
+		log.Printf("payment committed; event remains queued event_id=%s error=%v", event.EventID, err)
+		delivery = "queued"
+	}
+	platform.WriteJSON(w, 200, map[string]any{"id": id, "status": "completed", "event": "payment.completed", "event_id": event.EventID, "event_delivery": delivery, "published_to": platform.Env("NATS_URL", nats.DefaultURL), "confirmed_at": confirmedAt.UTC().Format(time.RFC3339)})
 }
 
 func writeDBError(w http.ResponseWriter, err error) {

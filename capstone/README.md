@@ -12,14 +12,14 @@ LearnHub la nen tang hoc online. Hoc vien dang ky tai khoan, xem khoa hoc, tao t
 
 | Service | Image | Role | Main paths |
 |---|---|---|---|
-| `web-ui` | `learnhub/web-ui:0.1.2` | Web UI cho demo LearnHub | `/`, `/courses`, `/students`, `/enrollments`, `/payments`, `/notifications`, `/platform` |
-| `user-service` | `learnhub/user-service:0.2.1` | User persistence, login lab | `/api/users` |
-| `course-service` | `learnhub/course-service:0.2.2` | Course/lesson persistence | `/api/courses`, `/cpu-burn` |
-| `enrollment-service` | `learnhub/enrollment-service:0.2.1` | Enrollment/progress, NATS consumer | `/api/enrollments`, `/api/progress` |
-| `payment-service` | `learnhub/payment-service:0.2.1` | Payment persistence, NATS publisher | `/api/payments` |
-| `notification-service` | `learnhub/notification-service:0.2.1` | Notification persistence, NATS consumer | `/api/notifications` |
+| `web-ui` | `learnhub/web-ui:0.2.0` | Web UI cho demo LearnHub | `/`, `/courses`, `/students`, `/enrollments`, `/payments`, `/notifications`, `/platform` |
+| `user-service` | `learnhub/user-service:0.3.0` | User persistence, login lab | `/api/users` |
+| `course-service` | `learnhub/course-service:0.4.0` | Course/lesson persistence, MinIO content | `/api/courses`, `/cpu-burn` |
+| `enrollment-service` | `learnhub/enrollment-service:0.3.0` | Enrollment/progress, Redis cache, JetStream | `/api/enrollments`, `/api/progress` |
+| `payment-service` | `learnhub/payment-service:0.3.0` | Payment persistence, transactional outbox | `/api/payments` |
+| `notification-service` | `learnhub/notification-service:0.3.0` | Durable event consumer, notification persistence | `/api/notifications` |
 
-Moi service co `/healthz`, `/readyz`, Dockerfile rieng trong `../services/<service>/Dockerfile`, va duoc deploy bang Deployment rieng.
+Moi service co `/healthz`, dependency-aware `/readyz`, Prometheus `/metrics`, Dockerfile rieng trong `../services/<service>/Dockerfile`, va duoc deploy bang Deployment rieng.
 
 ## Directory map
 
@@ -37,6 +37,7 @@ capstone/
     overlays/dev/
     overlays/prod/
     blue-green/
+    observability/
   web/
     index.html
     styles.css
@@ -65,6 +66,7 @@ capstone/
     blue-green-switch.sh
     install-ingress-nginx.sh
     cleanup.sh
+    promote-images.sh
   secrets/
     learnhub-secret.env.example
     service-database-secret.env.example
@@ -103,7 +105,7 @@ Tu project root `Online_Learning`:
 powershell -ExecutionPolicy Bypass -File .\capstone\scripts\build.ps1
 ```
 
-Script build tag `0.2.1` cho backend, `course-service:0.2.2`, `web-ui:0.1.2`, va build them `course-service:0.3.1` de demo blue/green.
+Script build tag `0.3.0` cho backend, `course-service:0.4.0`, `web-ui:0.2.0`, va build them `course-service:0.4.1` de demo blue/green.
 
 Tren Linux:
 
@@ -125,7 +127,7 @@ Script se:
 - Tao `learnhub-secret` va 5 database Secret rieng bang gia tri random local, khong commit secret that vao repo.
 - Apply `capstone/k8s/overlays/dev`.
 - Doi rollout cua cac Deployment chinh.
-- Doi 10 database migration Job version `001` va `002` hoan tat.
+- Doi migration Job `001`, `002` va cac migration reliability `003` hoan tat.
 
 ## Database per service
 
@@ -141,11 +143,11 @@ Nam backend service so huu database rieng:
 
 Moi app Pod co init container chay `psql SELECT 1`. NetworkPolicy loai port `5432` khoi rule noi bo chung va chi cho phep Pod co cung `learnhub.io/owner` truy cap database cua service.
 
-Moi database co migration `v001` tao migration ledger va `v002` tao business schema/seed data. Job idempotent va dung cung Secret/NetworkPolicy cua service.
+Moi database co migration `v001` tao migration ledger va `v002` tao business schema/seed data. Migration `v003` them MinIO metadata va transactional outbox. Job idempotent va dung cung Secret/NetworkPolicy cua service.
 
 ## Real asynchronous flow
 
-`POST /api/payments/{id}/confirm` cap nhat payment database, publish JSON event `payment.completed`, sau do flush NATS. `enrollment-service` va `notification-service` subscribe bang queue group rieng, ghi vao database cua minh va dung unique key de xu ly event lap lai an toan. `POST /api/progress` publish `lesson.completed` cho notification consumer.
+`POST /api/payments/{id}/confirm` cap nhat payment va ghi `payment.completed` vao outbox trong cung PostgreSQL transaction. Outbox worker publish len JetStream voi `Nats-Msg-Id`; neu NATS tam dung, event van nam trong database va duoc retry. `enrollment-service` va `notification-service` dung durable consumer, explicit ack va unique `event_id`/business key de xu ly at-least-once an toan. `POST /api/progress` cung ghi `lesson.completed` qua outbox.
 
 ```powershell
 curl.exe -X POST http://localhost/api/payments/p-1001/confirm
@@ -154,7 +156,33 @@ curl.exe http://localhost/api/users/u-1001/courses
 curl.exe http://localhost/api/notifications
 kubectl logs deploy/enrollment-service -n learnhub-capstone-dev -c main | Select-String "event consumed"
 kubectl logs deploy/notification-service -n learnhub-capstone-dev -c main | Select-String "event consumed"
+kubectl exec deploy/payment-postgresql -n learnhub-capstone-dev -- sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "TABLE outbox_events"'
 ```
+
+## Redis, MinIO and metrics proof
+
+`GET /api/progress/{user}/{course}` cache response trong Redis 5 phut va tra header `X-Cache: MISS|HIT`. Course content duoc upload/stream qua API, metadata nam trong course PostgreSQL va bytes nam trong MinIO.
+
+```powershell
+curl.exe -i http://localhost/api/progress/u-1001/c-k8s-ckad
+curl.exe -i http://localhost/api/progress/u-1001/c-k8s-ckad
+curl.exe -X PUT -H "Content-Type: text/plain" --data-binary "LearnHub content" http://localhost/api/courses/c-k8s-ckad/lessons/l-01/content
+curl.exe http://localhost/api/courses/c-k8s-ckad/lessons/l-01/content
+kubectl port-forward svc/user-service 18081:80 -n learnhub-capstone-dev
+curl.exe http://localhost:18081/metrics
+```
+
+Optional observability stack gom Prometheus, Grafana, Loki va Fluent Bit:
+
+```powershell
+kubectl apply -k .\capstone\k8s\observability
+kubectl rollout status deploy/prometheus -n learnhub-capstone-dev
+kubectl rollout status deploy/grafana -n learnhub-capstone-dev
+kubectl rollout status deploy/loki -n learnhub-capstone-dev
+kubectl port-forward svc/grafana 3000:3000 -n learnhub-capstone-dev
+```
+
+Mo `http://localhost:3000`; Prometheus va Loki da duoc provision thanh datasource. Fluent Bit thu log container LearnHub o node level.
 
 Kiem tra nhanh:
 
@@ -226,7 +254,7 @@ Trong Web UI, moi nhom API deu co trang rieng va form thao tac truc tiep:
 | UI route | API duoc thao tac |
 |---|---|
 | `/students` | `GET /api/users`, `POST /api/users/register`, `POST /api/users/login`, `GET /api/users/{id}` |
-| `/courses` | `GET /api/courses`, `POST /api/courses`, `GET /api/courses/{id}`, `POST /api/courses/{id}/lessons` |
+| `/courses` | Course CRUD, lesson CRUD va `PUT|GET /api/courses/{id}/lessons/{lessonId}/content` voi MinIO |
 | `/enrollments` | `POST /api/enrollments`, `GET /api/users/{id}/courses`, `POST /api/progress`, `GET /api/progress/{userId}/{courseId}` |
 | `/payments` | `POST /api/payments`, `GET /api/payments/{id}`, `POST /api/payments/{id}/confirm` |
 | `/notifications` | `GET /api/notifications`, `POST /api/notifications/email`, `POST /api/notifications/course-reminder` |
@@ -253,7 +281,7 @@ kubectl run capstone-curl --rm -i --restart=Never --image=curlimages/curl:8.10.1
 
 ## Blue/green switch
 
-Course traffic mac dinh vao `course-service-blue`. Track `blue` dung image `course-service:0.2.2`, track `green` dung image `course-service:0.3.1`.
+Course traffic mac dinh vao `course-service-blue`. Track `blue` dung image `course-service:0.4.0`, track `green` dung image `course-service:0.4.1`.
 
 ```powershell
 kubectl get svc course-service -n learnhub-capstone-dev -o jsonpath='{.spec.selector.track}'
@@ -261,7 +289,7 @@ kubectl get svc course-service -n learnhub-capstone-dev -o jsonpath='{.spec.sele
 kubectl run capstone-curl-course-version --rm -i --restart=Never --image=curlimages/curl:8.10.1 -n learnhub-capstone-dev --labels=app.kubernetes.io/part-of=learnhub -- curl --fail --silent http://course-service/
 ```
 
-Neu Service dang tro blue, curl `/` tra ve `"version":"0.2.2"`. Switch sang green:
+Neu Service dang tro blue, curl `/` tra ve `"version":"0.4.0"`. Switch sang green:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\capstone\scripts\blue-green-switch.ps1 -Namespace learnhub-capstone-dev -Track green
@@ -273,7 +301,7 @@ kubectl get endpointslice -n learnhub-capstone-dev -l kubernetes.io/service-name
 kubectl run capstone-curl-course-version --rm -i --restart=Never --image=curlimages/curl:8.10.1 -n learnhub-capstone-dev --labels=app.kubernetes.io/part-of=learnhub -- curl --fail --silent http://course-service/
 ```
 
-Sau khi switch green, selector phai la `green`, EndpointSlice phai target Pod `course-service-green-*`, va curl `/` phai tra ve `"version":"0.3.1"`.
+Sau khi switch green, selector phai la `green`, EndpointSlice phai target Pod `course-service-green-*`, va curl `/` phai tra ve `"version":"0.4.1"`.
 
 Quay lai blue va kiem tra lai:
 
@@ -299,8 +327,8 @@ helm lint .\capstone\helm\course-service
 Demo course chart song song voi bo Kustomize chinh:
 
 ```powershell
-helm upgrade --install learnhub-course .\capstone\helm\course-service -n learnhub-capstone-dev --set fullnameOverride=course-service-helm --set database.deploy=false --set database.migration.enabled=false --set image.tag=0.2.2
-helm upgrade learnhub-course .\capstone\helm\course-service -n learnhub-capstone-dev --reuse-values --set image.tag=0.3.1
+helm upgrade --install learnhub-course .\capstone\helm\course-service -n learnhub-capstone-dev --set fullnameOverride=course-service-helm --set database.deploy=false --set database.migration.enabled=false --set image.tag=0.4.0
+helm upgrade learnhub-course .\capstone\helm\course-service -n learnhub-capstone-dev --reuse-values --set image.tag=0.4.1
 helm history learnhub-course -n learnhub-capstone-dev
 helm rollback learnhub-course 1 -n learnhub-capstone-dev
 ```
@@ -315,8 +343,8 @@ powershell -ExecutionPolicy Bypass -File .\capstone\scripts\cleanup.ps1 -Namespa
 
 ## Known limitations
 
-- Payment gateway, JWT signing, SMTP delivery, Redis cache va MinIO object operations van la lab boundary; API business chinh da persist vao PostgreSQL va event flow da dung NATS that.
-- Core NATS hien la at-most-once; production can JetStream/outbox, retry/dead-letter va contract versioning.
-- Migration `v002` la schema demo; production can migration tool, rollback/data backfill va backup policy.
+- Payment gateway, JWT signing va SMTP delivery van la lab boundary; PostgreSQL, Redis cache, MinIO object operations va JetStream event flow da dung backing service that.
+- JetStream/outbox hien co retry, durable consumer va idempotency; production van can dead-letter workflow, event schema registry va multi-node NATS cluster.
+- Migration `v003` la schema demo; production can migration tool, rollback/data backfill va backup policy.
 - NetworkPolicy can CNI co enforcement; Docker Desktop mac dinh co the khong enforce tuy cau hinh.
 - Secret do script sinh la secret demo local, production can dung secret manager hoac pipeline rieng.

@@ -94,6 +94,23 @@ const state = {
       description: "Thêm lesson",
     },
     {
+      service: "course-service",
+      method: "PUT",
+      path: "/api/courses/c-k8s-ckad/lessons/l-01/content",
+      page: "courses",
+      body: "LearnHub lesson content stored in MinIO.",
+      headers: { "Content-Type": "text/plain" },
+      description: "Lưu nội dung lesson vào MinIO",
+    },
+    {
+      service: "course-service",
+      method: "GET",
+      path: "/api/courses/c-k8s-ckad/lessons/l-01/content",
+      page: "courses",
+      browser: true,
+      description: "Đọc nội dung lesson từ MinIO",
+    },
+    {
       service: "enrollment-service",
       method: "POST",
       path: "/api/enrollments",
@@ -189,7 +206,7 @@ async function request(path, options = {}, viewOptions = {}) {
   const method = options.method || "GET";
   const init = {
     method,
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
   };
 
   if (options.body !== undefined && method !== "GET") {
@@ -454,7 +471,7 @@ function renderApiCatalog() {
       </div>
       <div class="api-actions">
         <a class="secondary-button compact-button" href="/${escapeHtml(endpoint.page)}" data-view-link="${escapeHtml(endpoint.page)}">UI</a>
-        ${endpoint.browser ? `<a class="secondary-button compact-button" href="${escapeHtml(endpoint.path)}" target="_blank" rel="noopener">Open</a>` : `<span class="badge alt">POST</span>`}
+        ${endpoint.browser ? `<a class="secondary-button compact-button" href="${escapeHtml(endpoint.path)}" target="_blank" rel="noopener">Open</a>` : `<span class="badge alt">${escapeHtml(endpoint.method)}</span>`}
         <button class="primary-button compact-button" type="button" data-action="call-api" data-endpoint="${index}">Call</button>
       </div>
     </article>
@@ -552,6 +569,14 @@ async function handleSubmit(action, form) {
       }, { resultId: "coursesResult" });
     }
 
+    if (action === "lesson-content-upload") {
+      await request(`/api/courses/${pathSegment(data.course_id, "c-k8s-ckad")}/lessons/${pathSegment(data.lesson_id, "l-01")}/content`, {
+        method: "PUT",
+        headers: { "Content-Type": "text/plain" },
+        body: data.content,
+      }, { resultId: "coursesResult" });
+    }
+
     if (action === "user-courses") {
       const payload = await request(`/api/users/${pathSegment(data.user_id, "u-1001")}/courses`, {}, { resultId: "enrollmentsResult" });
       state.enrolledCourses = payload.items || [];
@@ -641,6 +666,7 @@ async function handleAction(action, element) {
       await request(endpoint.path, {
         method: endpoint.method,
         body: endpoint.body,
+        headers: endpoint.headers,
       }, { resultId: "rawOutput" });
     }
 

@@ -1,8 +1,8 @@
 param(
-  [string]$Tag = "0.2.1",
-  [string]$CourseTag = "0.2.2",
-  [string]$WebTag = "0.1.2",
-  [string]$GreenTag = "0.3.1",
+  [string]$Tag = "0.3.0",
+  [string]$CourseTag = "0.4.0",
+  [string]$WebTag = "0.2.0",
+  [string]$GreenTag = "0.4.1",
   [switch]$SkipGreen
 )
 

@@ -216,8 +216,14 @@ spec:
               until PGPASSWORD="$POSTGRES_PASSWORD" psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT 1" >/dev/null 2>&1; do sleep 2; done
               PGPASSWORD="$POSTGRES_PASSWORD" psql -v ON_ERROR_STOP=1 -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<'SQL'
               CREATE TABLE IF NOT EXISTS schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now());
+              {{- with .Values.database.migration.files }}
+              {{- range . }}
+              {{- $.Files.Get . | nindent 14 }}
+              {{- end }}
+              {{- else }}
               {{- with .Values.database.migration.file }}
               {{- $.Files.Get . | nindent 14 }}
+              {{- end }}
               {{- end }}
               INSERT INTO schema_migrations(version) VALUES ('{{ .Values.database.migration.version }}') ON CONFLICT DO NOTHING;
               SQL

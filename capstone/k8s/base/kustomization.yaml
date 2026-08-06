@@ -22,6 +22,7 @@ resources:
   - notification-service.yaml
   - database-migrations.yaml
   - database-business-migrations.yaml
+  - database-reliability-migrations.yaml
   - hpa.yaml
   - secret-check-job.yaml
   - storage-reader-job.yaml
@@ -30,6 +31,18 @@ resources:
   - networkpolicy.yaml
 
 patches:
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      labelSelector: app.kubernetes.io/component in (api,worker)
+    patch: |-
+      - op: add
+        path: /spec/template/metadata/annotations
+        value:
+          prometheus.io/scrape: "true"
+          prometheus.io/path: /metrics
+          prometheus.io/port: "8080"
   - target:
       group: apps
       version: v1
@@ -94,6 +107,8 @@ patches:
           runAsNonRoot: true
           runAsUser: 1000
           runAsGroup: 1000
+          fsGroup: 1000
+          fsGroupChangePolicy: OnRootMismatch
           seccompProfile:
             type: RuntimeDefault
       - op: add

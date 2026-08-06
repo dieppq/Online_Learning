@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -24,6 +25,17 @@ var (
 
 var requestSequence atomic.Uint64
 
+type httpMetrics struct {
+	requests      atomic.Uint64
+	inFlight      atomic.Int64
+	status2xx     atomic.Uint64
+	status4xx     atomic.Uint64
+	status5xx     atomic.Uint64
+	durationNanos atomic.Uint64
+}
+
+var metrics httpMetrics
+
 type Service struct {
 	Name        string
 	Version     string
@@ -35,6 +47,8 @@ type Service struct {
 	StartedAt   time.Time
 	Logger      *slog.Logger
 }
+
+type ReadinessCheck func(context.Context) error
 
 func NewService(defaultName string) Service {
 	name := Env("SERVICE_NAME", defaultName)
@@ -94,7 +108,7 @@ func ListenAddr(port string) string {
 	return ":" + port
 }
 
-func RegisterHealth(mux *http.ServeMux, svc Service, dependencies map[string]string) {
+func RegisterHealth(mux *http.ServeMux, svc Service, dependencies map[string]string, checkSets ...map[string]ReadinessCheck) {
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		WriteJSON(w, http.StatusOK, map[string]any{
 			"status":  "live",
@@ -107,13 +121,54 @@ func RegisterHealth(mux *http.ServeMux, svc Service, dependencies map[string]str
 	})
 
 	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
-		WriteJSON(w, http.StatusOK, map[string]any{
-			"status":       "ready",
+		checks := map[string]ReadinessCheck{}
+		if len(checkSets) > 0 {
+			checks = checkSets[0]
+		}
+		failures := map[string]string{}
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+		for name, check := range checks {
+			if err := check(ctx); err != nil {
+				failures[name] = err.Error()
+			}
+		}
+		status := http.StatusOK
+		state := "ready"
+		if len(failures) > 0 {
+			status = http.StatusServiceUnavailable
+			state = "not_ready"
+		}
+		WriteJSON(w, status, map[string]any{
+			"status":       state,
 			"service":      svc.Name,
 			"version":      svc.Version,
 			"release":      svc.Release,
 			"dependencies": dependencies,
+			"failures":     failures,
 		})
+	})
+
+	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+		labels := fmt.Sprintf("service=%q,version=%q", svc.Name, svc.Version)
+		_, _ = fmt.Fprintf(w, "# HELP learnhub_http_requests_total Total HTTP requests handled.\n")
+		_, _ = fmt.Fprintf(w, "# TYPE learnhub_http_requests_total counter\n")
+		_, _ = fmt.Fprintf(w, "learnhub_http_requests_total{%s} %d\n", labels, metrics.requests.Load())
+		_, _ = fmt.Fprintf(w, "# HELP learnhub_http_requests_in_flight Current HTTP requests being handled.\n")
+		_, _ = fmt.Fprintf(w, "# TYPE learnhub_http_requests_in_flight gauge\n")
+		_, _ = fmt.Fprintf(w, "learnhub_http_requests_in_flight{%s} %d\n", labels, metrics.inFlight.Load())
+		_, _ = fmt.Fprintf(w, "# HELP learnhub_http_responses_total HTTP responses grouped by status class.\n")
+		_, _ = fmt.Fprintf(w, "# TYPE learnhub_http_responses_total counter\n")
+		_, _ = fmt.Fprintf(w, "learnhub_http_responses_total{%s,status_class=%q} %d\n", labels, "2xx", metrics.status2xx.Load())
+		_, _ = fmt.Fprintf(w, "learnhub_http_responses_total{%s,status_class=%q} %d\n", labels, "4xx", metrics.status4xx.Load())
+		_, _ = fmt.Fprintf(w, "learnhub_http_responses_total{%s,status_class=%q} %d\n", labels, "5xx", metrics.status5xx.Load())
+		_, _ = fmt.Fprintf(w, "# HELP learnhub_http_request_duration_seconds_sum Cumulative HTTP request duration.\n")
+		_, _ = fmt.Fprintf(w, "# TYPE learnhub_http_request_duration_seconds_sum counter\n")
+		_, _ = fmt.Fprintf(w, "learnhub_http_request_duration_seconds_sum{%s} %.6f\n", labels, float64(metrics.durationNanos.Load())/float64(time.Second))
+		_, _ = fmt.Fprintf(w, "# HELP learnhub_build_info Build and release metadata.\n")
+		_, _ = fmt.Fprintf(w, "# TYPE learnhub_build_info gauge\n")
+		_, _ = fmt.Fprintf(w, "learnhub_build_info{%s,release=%q,commit=%q} 1\n", labels, svc.Release, svc.Commit)
 	})
 }
 
@@ -253,6 +308,10 @@ func RequestLogger(svc Service, next http.Handler) http.Handler {
 	logHealth := strings.EqualFold(Env("LOG_HEALTH_REQUESTS", "false"), "true")
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		metrics.requests.Add(1)
+		metrics.inFlight.Add(1)
+		defer metrics.inFlight.Add(-1)
+
 		requestID := strings.TrimSpace(r.Header.Get("X-Request-ID"))
 		if requestID == "" {
 			requestID = strconv.FormatInt(time.Now().UnixNano(), 36) + "-" + strconv.FormatUint(requestSequence.Add(1), 36)
@@ -262,6 +321,19 @@ func RequestLogger(svc Service, next http.Handler) http.Handler {
 		started := time.Now()
 		recorder := &responseRecorder{ResponseWriter: w}
 		next.ServeHTTP(recorder, r)
+		status := recorder.status
+		if status == 0 {
+			status = http.StatusOK
+		}
+		switch {
+		case status >= 500:
+			metrics.status5xx.Add(1)
+		case status >= 400:
+			metrics.status4xx.Add(1)
+		case status >= 200:
+			metrics.status2xx.Add(1)
+		}
+		metrics.durationNanos.Add(uint64(time.Since(started)))
 
 		if !logHealth && (r.URL.Path == "/healthz" || r.URL.Path == "/readyz") {
 			return
@@ -271,7 +343,7 @@ func RequestLogger(svc Service, next http.Handler) http.Handler {
 			"request_id", requestID,
 			"method", r.Method,
 			"path", r.URL.Path,
-			"status", recorder.status,
+			"status", status,
 			"bytes", recorder.bytes,
 			"duration_ms", time.Since(started).Milliseconds(),
 			"remote_addr", r.RemoteAddr,

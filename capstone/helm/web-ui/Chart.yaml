@@ -2,9 +2,9 @@ apiVersion: v2
 name: web-ui
 description: Helm chart for the LearnHub web UI
 type: application
-version: 0.3.0
-appVersion: "0.1.2"
+version: 0.4.0
+appVersion: "0.2.0"
 dependencies:
   - name: learnhub-common
-    version: 0.3.0
+    version: 0.4.0
     repository: file://../learnhub-common

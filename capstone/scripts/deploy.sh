@@ -19,6 +19,10 @@ for version in 001 002; do
   done
 done
 
+for service in course enrollment payment; do
+  kubectl wait --for=condition=complete "job/$service-db-migrate-v003" -n "$NAMESPACE" --timeout="$TIMEOUT"
+done
+
 for deployment in user-postgresql course-postgresql enrollment-postgresql payment-postgresql notification-postgresql redis nats minio web-ui user-service course-service-blue course-service-green enrollment-service payment-service notification-service; do
   kubectl rollout status "deployment/$deployment" -n "$NAMESPACE" --timeout="$TIMEOUT"
 done
