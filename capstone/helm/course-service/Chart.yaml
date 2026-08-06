@@ -1,0 +1,10 @@
+apiVersion: v2
+name: course-service
+description: Helm chart for the LearnHub course-service
+type: application
+version: 0.3.2
+appVersion: "0.2.2"
+dependencies:
+  - name: learnhub-common
+    version: 0.3.0
+    repository: file://../learnhub-common

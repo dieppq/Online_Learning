@@ -1,0 +1,10 @@
+apiVersion: v2
+name: payment-service
+description: Helm chart for the LearnHub payment-service
+type: application
+version: 0.3.1
+appVersion: "0.2.1"
+dependencies:
+  - name: learnhub-common
+    version: 0.3.0
+    repository: file://../learnhub-common

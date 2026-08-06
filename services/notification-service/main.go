@@ -1,104 +1,150 @@
 package main
 
 import (
+	"context"
+	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"time"
 
+	"github.com/nats-io/nats.go"
 	"learnhub/internal/platform"
 )
 
-func main() {
-	svc := platform.NewService("notification-service")
-	mux := http.NewServeMux()
-
-	platform.RegisterHealth(mux, svc, map[string]string{
-		"nats_url":  platform.Env("NATS_URL", "nats://nats:4222"),
-		"smtp_host": platform.Env("SMTP_HOST", "smtp.local"),
-	})
-
-	mux.HandleFunc("/api/notifications", listNotifications)
-	mux.HandleFunc("/api/notifications/email", sendEmail)
-	mux.HandleFunc("/api/notifications/course-reminder", sendCourseReminder)
-
-	platform.RegisterIndex(mux, svc, []string{
-		"GET /api/notifications",
-		"POST /api/notifications/email",
-		"POST /api/notifications/course-reminder",
-		"GET /healthz",
-		"GET /readyz",
-	})
-
-	if err := platform.RunHTTP(svc, mux); err != nil {
-		log.Fatal(err)
-	}
+type app struct {
+	db *sql.DB
+	nc *nats.Conn
+}
+type domainEvent struct {
+	EventID    string    `json:"event_id"`
+	UserID     string    `json:"user_id"`
+	CourseID   string    `json:"course_id"`
+	PaymentID  string    `json:"payment_id"`
+	LessonID   string    `json:"lesson_id"`
+	OccurredAt time.Time `json:"occurred_at"`
 }
 
-func listNotifications(w http.ResponseWriter, r *http.Request) {
+func main() {
+	db, err := platform.OpenPostgres(context.Background())
+	if err != nil {
+		log.Fatalf("connect notification database: %v", err)
+	}
+	defer db.Close()
+	nc, err := platform.ConnectNATS("notification-service")
+	if err != nil {
+		log.Fatalf("connect nats: %v", err)
+	}
+	defer nc.Drain()
+	a := &app{db: db, nc: nc}
+	for _, subject := range []string{"payment.completed", "lesson.completed"} {
+		if _, err := nc.QueueSubscribe(subject, "notification-service", a.handleDomainEvent); err != nil {
+			log.Fatalf("subscribe %s: %v", subject, err)
+		}
+	}
+	if err := nc.Flush(); err != nil {
+		log.Fatalf("activate nats subscriptions: %v", err)
+	}
+	svc := platform.NewService("notification-service")
+	mux := http.NewServeMux()
+	platform.RegisterHealth(mux, svc, map[string]string{"postgres_host": platform.Env("POSTGRES_HOST", "notification-postgresql"), "nats_url": platform.Env("NATS_URL", nats.DefaultURL), "smtp_host": platform.Env("SMTP_HOST", "smtp.local")})
+	mux.HandleFunc("/api/notifications", a.listNotifications)
+	mux.HandleFunc("/api/notifications/email", a.sendEmail)
+	mux.HandleFunc("/api/notifications/course-reminder", a.sendCourseReminder)
+	platform.RegisterIndex(mux, svc, []string{"GET /api/notifications", "POST /api/notifications/email", "POST /api/notifications/course-reminder", "GET /healthz", "GET /readyz"})
+	platform.ServeHTTP(svc, mux)
+}
+
+func (a *app) handleDomainEvent(msg *nats.Msg) {
+	var event domainEvent
+	if err := json.Unmarshal(msg.Data, &event); err != nil {
+		log.Printf("invalid %s: %v", msg.Subject, err)
+		return
+	}
+	if event.EventID == "" {
+		log.Printf("missing event_id subject=%s", msg.Subject)
+		return
+	}
+	recipient := event.UserID + "@learnhub.local"
+	_, err := a.db.Exec(`INSERT INTO notifications(id,event_id,type,recipient,user_id,course_id,status) VALUES($1,$2,$3,$4,$5,$6,'queued') ON CONFLICT(event_id) DO NOTHING`, fmt.Sprintf("n-%d", time.Now().UnixNano()), event.EventID, msg.Subject, recipient, event.UserID, event.CourseID)
+	if err != nil {
+		log.Printf("consume %s event_id=%s: %v", msg.Subject, event.EventID, err)
+		return
+	}
+	log.Printf("event consumed subject=%s event_id=%s", msg.Subject, event.EventID)
+}
+
+func (a *app) listNotifications(w http.ResponseWriter, r *http.Request) {
 	if !platform.RequireMethod(w, r, http.MethodGet) {
 		return
 	}
-
-	platform.WriteJSON(w, http.StatusOK, map[string]any{
-		"items": []map[string]any{
-			{"id": "n-1001", "type": "payment.completed", "recipient": "an@example.com", "status": "sent"},
-			{"id": "n-1002", "type": "lesson.completed", "recipient": "an@example.com", "status": "queued"},
-		},
-	})
+	rows, err := a.db.QueryContext(r.Context(), `SELECT id,type,recipient,status,created_at FROM notifications ORDER BY created_at DESC LIMIT 100`)
+	if err != nil {
+		writeDBError(w, err)
+		return
+	}
+	defer rows.Close()
+	items := make([]map[string]any, 0)
+	for rows.Next() {
+		var id, kind, recipient, status string
+		var createdAt time.Time
+		if err := rows.Scan(&id, &kind, &recipient, &status, &createdAt); err != nil {
+			writeDBError(w, err)
+			return
+		}
+		items = append(items, map[string]any{"id": id, "type": kind, "recipient": recipient, "status": status, "created_at": createdAt.UTC().Format(time.RFC3339)})
+	}
+	platform.WriteJSON(w, 200, map[string]any{"items": items})
 }
 
-func sendEmail(w http.ResponseWriter, r *http.Request) {
+func (a *app) sendEmail(w http.ResponseWriter, r *http.Request) {
 	if !platform.RequireMethod(w, r, http.MethodPost) {
 		return
 	}
-
-	payload, err := platform.ReadJSON(r)
+	p, err := platform.ReadJSON(r)
 	if err != nil {
-		platform.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_json"})
+		platform.WriteJSON(w, 400, map[string]any{"error": "invalid_json"})
 		return
 	}
-
-	recipient, _ := payload["recipient"].(string)
+	recipient, _ := p["recipient"].(string)
 	if recipient == "" {
-		recipient = "student@example.com"
+		platform.WriteJSON(w, 400, map[string]any{"error": "recipient_required"})
+		return
 	}
-
-	platform.WriteJSON(w, http.StatusAccepted, map[string]any{
-		"id":         fmt.Sprintf("n-%d", time.Now().Unix()),
-		"type":       "email",
-		"recipient":  recipient,
-		"status":     "queued",
-		"created_at": time.Now().UTC().Format(time.RFC3339),
-	})
+	a.createNotification(w, r, "email", recipient, "", "")
 }
 
-func sendCourseReminder(w http.ResponseWriter, r *http.Request) {
+func (a *app) sendCourseReminder(w http.ResponseWriter, r *http.Request) {
 	if !platform.RequireMethod(w, r, http.MethodPost) {
 		return
 	}
-
-	payload, err := platform.ReadJSON(r)
+	p, err := platform.ReadJSON(r)
 	if err != nil {
-		platform.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_json"})
+		platform.WriteJSON(w, 400, map[string]any{"error": "invalid_json"})
 		return
 	}
-
-	userID, _ := payload["user_id"].(string)
-	courseID, _ := payload["course_id"].(string)
-	if userID == "" {
-		userID = "u-1001"
+	userID, _ := p["user_id"].(string)
+	courseID, _ := p["course_id"].(string)
+	if userID == "" || courseID == "" {
+		platform.WriteJSON(w, 400, map[string]any{"error": "user_id_and_course_id_required"})
+		return
 	}
-	if courseID == "" {
-		courseID = "c-k8s-ckad"
-	}
+	a.createNotification(w, r, "course_reminder", userID+"@learnhub.local", userID, courseID)
+}
 
-	platform.WriteJSON(w, http.StatusAccepted, map[string]any{
-		"id":         fmt.Sprintf("n-%d", time.Now().Unix()),
-		"type":       "course_reminder",
-		"user_id":    userID,
-		"course_id":  courseID,
-		"status":     "queued",
-		"created_at": time.Now().UTC().Format(time.RFC3339),
-	})
+func (a *app) createNotification(w http.ResponseWriter, r *http.Request, kind, recipient, userID, courseID string) {
+	id := fmt.Sprintf("n-%d", time.Now().UnixNano())
+	var createdAt time.Time
+	err := a.db.QueryRowContext(r.Context(), `INSERT INTO notifications(id,type,recipient,user_id,course_id,status) VALUES($1,$2,$3,NULLIF($4,''),NULLIF($5,''),'queued') RETURNING created_at`, id, kind, recipient, userID, courseID).Scan(&createdAt)
+	if err != nil {
+		writeDBError(w, err)
+		return
+	}
+	platform.WriteJSON(w, 202, map[string]any{"id": id, "type": kind, "recipient": recipient, "user_id": userID, "course_id": courseID, "status": "queued", "created_at": createdAt.UTC().Format(time.RFC3339)})
+}
+
+func writeDBError(w http.ResponseWriter, err error) {
+	log.Printf("database error: %v", err)
+	platform.WriteJSON(w, 500, map[string]any{"error": "database_error"})
 }

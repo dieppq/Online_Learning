@@ -89,8 +89,6 @@ spec:
         - protocol: TCP
           port: 8081
         - protocol: TCP
-          port: 5432
-        - protocol: TCP
           port: 6379
         - protocol: TCP
           port: 4222
@@ -113,8 +111,6 @@ spec:
         - protocol: TCP
           port: 8081
         - protocol: TCP
-          port: 5432
-        - protocol: TCP
           port: 6379
         - protocol: TCP
           port: 4222
@@ -124,6 +120,161 @@ spec:
           port: 9000
         - protocol: TCP
           port: 9001
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-user-service-database
+  labels:
+    app.kubernetes.io/name: allow-user-service-database
+    app.kubernetes.io/part-of: learnhub
+spec:
+  podSelector:
+    matchLabels:
+      learnhub.io/owner: user-service
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              learnhub.io/owner: user-service
+      ports:
+        - protocol: TCP
+          port: 5432
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              learnhub.io/owner: user-service
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-course-service-database
+  labels:
+    app.kubernetes.io/name: allow-course-service-database
+    app.kubernetes.io/part-of: learnhub
+spec:
+  podSelector:
+    matchLabels:
+      learnhub.io/owner: course-service
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              learnhub.io/owner: course-service
+      ports:
+        - protocol: TCP
+          port: 5432
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              learnhub.io/owner: course-service
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-enrollment-service-database
+  labels:
+    app.kubernetes.io/name: allow-enrollment-service-database
+    app.kubernetes.io/part-of: learnhub
+spec:
+  podSelector:
+    matchLabels:
+      learnhub.io/owner: enrollment-service
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              learnhub.io/owner: enrollment-service
+      ports:
+        - protocol: TCP
+          port: 5432
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              learnhub.io/owner: enrollment-service
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-payment-service-database
+  labels:
+    app.kubernetes.io/name: allow-payment-service-database
+    app.kubernetes.io/part-of: learnhub
+spec:
+  podSelector:
+    matchLabels:
+      learnhub.io/owner: payment-service
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              learnhub.io/owner: payment-service
+      ports:
+        - protocol: TCP
+          port: 5432
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              learnhub.io/owner: payment-service
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-notification-service-database
+  labels:
+    app.kubernetes.io/name: allow-notification-service-database
+    app.kubernetes.io/part-of: learnhub
+spec:
+  podSelector:
+    matchLabels:
+      learnhub.io/owner: notification-service
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              learnhub.io/owner: notification-service
+      ports:
+        - protocol: TCP
+          port: 5432
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              learnhub.io/owner: notification-service
+      ports:
+        - protocol: TCP
+          port: 5432
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -145,3 +296,5 @@ spec:
       ports:
         - protocol: TCP
           port: 443
+        - protocol: TCP
+          port: 6443

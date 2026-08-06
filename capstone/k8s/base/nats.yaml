@@ -26,7 +26,6 @@ spec:
           image: nats:2.10-alpine
           imagePullPolicy: IfNotPresent
           args:
-            - -js
             - -m
             - "8222"
           ports:
@@ -73,4 +72,3 @@ spec:
     - name: monitor
       port: 8222
       targetPort: monitor
-

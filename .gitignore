@@ -4,6 +4,8 @@
 # Runtime secrets and local environment files.
 *.env
 !*.env.example
+**/*secret*.txt
+**/secret.env
 .env
 .env.*
 !.env.example
@@ -22,6 +24,7 @@ build/
 coverage/
 *.test
 *.out
+capstone/helm/*/charts/*.tgz
 
 # OS/editor files.
 .DS_Store

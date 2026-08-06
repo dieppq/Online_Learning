@@ -20,17 +20,21 @@ function New-RandomSecret {
   return [Convert]::ToBase64String($bytes)
 }
 
-if ([string]::IsNullOrWhiteSpace($PostgresPassword)) {
-  $PostgresPassword = New-RandomSecret
-}
-if ([string]::IsNullOrWhiteSpace($JwtSecret)) {
-  $JwtSecret = New-RandomSecret
-}
-if ([string]::IsNullOrWhiteSpace($MinioRootPassword)) {
-  $MinioRootPassword = New-RandomSecret
-}
-if ([string]::IsNullOrWhiteSpace($SmtpPassword)) {
-  $SmtpPassword = New-RandomSecret
+function Get-ExistingSecretValue {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$SecretName,
+
+    [Parameter(Mandatory = $true)]
+    [string]$Key
+  )
+
+  $encodedValue = & kubectl get secret $SecretName -n $Namespace --ignore-not-found -o "jsonpath={.data.$Key}" 2>$null
+  if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($encodedValue)) {
+    return ""
+  }
+
+  return [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($encodedValue))
 }
 
 $namespaceYaml = & kubectl create namespace $Namespace --dry-run=client -o yaml
@@ -43,10 +47,26 @@ if ($LASTEXITCODE -ne 0) {
   throw "kubectl apply namespace $Namespace failed."
 }
 
+if ([string]::IsNullOrWhiteSpace($JwtSecret)) {
+  $JwtSecret = Get-ExistingSecretValue -SecretName $Name -Key "JWT_SECRET"
+  if ([string]::IsNullOrWhiteSpace($JwtSecret)) {
+    $JwtSecret = New-RandomSecret
+  }
+}
+if ([string]::IsNullOrWhiteSpace($MinioRootPassword)) {
+  $MinioRootPassword = Get-ExistingSecretValue -SecretName $Name -Key "MINIO_ROOT_PASSWORD"
+  if ([string]::IsNullOrWhiteSpace($MinioRootPassword)) {
+    $MinioRootPassword = New-RandomSecret
+  }
+}
+if ([string]::IsNullOrWhiteSpace($SmtpPassword)) {
+  $SmtpPassword = Get-ExistingSecretValue -SecretName $Name -Key "SMTP_PASSWORD"
+  if ([string]::IsNullOrWhiteSpace($SmtpPassword)) {
+    $SmtpPassword = New-RandomSecret
+  }
+}
+
 $literalArgs = @(
-  "--from-literal=POSTGRES_DB=$PostgresDb",
-  "--from-literal=POSTGRES_USER=$PostgresUser",
-  "--from-literal=POSTGRES_PASSWORD=$PostgresPassword",
   "--from-literal=JWT_SECRET=$JwtSecret",
   "--from-literal=MINIO_ROOT_USER=$MinioRootUser",
   "--from-literal=MINIO_ROOT_PASSWORD=$MinioRootPassword",
@@ -64,4 +84,40 @@ if ($LASTEXITCODE -ne 0) {
   throw "kubectl apply secret failed."
 }
 
-Write-Host "Secret $Name is present in namespace $Namespace. Values were not printed."
+$databaseServices = @(
+  @{ Key = "user"; SecretName = "user-service-db" },
+  @{ Key = "course"; SecretName = "course-service-db" },
+  @{ Key = "enrollment"; SecretName = "enrollment-service-db" },
+  @{ Key = "payment"; SecretName = "payment-service-db" },
+  @{ Key = "notification"; SecretName = "notification-service-db" }
+)
+
+foreach ($databaseService in $databaseServices) {
+  $databasePassword = $PostgresPassword
+  if ([string]::IsNullOrWhiteSpace($databasePassword)) {
+    $databasePassword = Get-ExistingSecretValue -SecretName $databaseService.SecretName -Key "POSTGRES_PASSWORD"
+    if ([string]::IsNullOrWhiteSpace($databasePassword)) {
+      $databasePassword = New-RandomSecret
+    }
+  }
+
+  $databaseName = "${PostgresDb}_$($databaseService.Key)"
+  $databaseUser = "${PostgresUser}_$($databaseService.Key)"
+  $databaseArgs = @(
+    "--from-literal=POSTGRES_DB=$databaseName",
+    "--from-literal=POSTGRES_USER=$databaseUser",
+    "--from-literal=POSTGRES_PASSWORD=$databasePassword"
+  )
+
+  $databaseSecretYaml = & kubectl create secret generic $databaseService.SecretName -n $Namespace @databaseArgs --dry-run=client -o yaml
+  if ($LASTEXITCODE -ne 0) {
+    throw "kubectl create secret dry-run failed for $($databaseService.SecretName)."
+  }
+
+  $databaseSecretYaml | & kubectl apply -f -
+  if ($LASTEXITCODE -ne 0) {
+    throw "kubectl apply secret failed for $($databaseService.SecretName)."
+  }
+}
+
+Write-Host "Shared secret $Name and 5 service database secrets are present in namespace $Namespace. Values were not printed."

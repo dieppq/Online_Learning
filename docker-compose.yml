@@ -1,19 +1,128 @@
 services:
-  postgresql:
+  user-postgresql:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: learnhub
-      POSTGRES_USER: learnhub
-      POSTGRES_PASSWORD: learnhub-postgres-lab-password
-    ports:
-      - "5432:5432"
+      POSTGRES_DB: ${USER_DB_NAME}
+      POSTGRES_USER: ${USER_DB_USER}
+      POSTGRES_PASSWORD: ${USER_DB_PASSWORD}
     volumes:
-      - postgresql-data:/var/lib/postgresql/data
+      - user-postgresql-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U learnhub"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  course-postgresql:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${COURSE_DB_NAME}
+      POSTGRES_USER: ${COURSE_DB_USER}
+      POSTGRES_PASSWORD: ${COURSE_DB_PASSWORD}
+    volumes:
+      - course-postgresql-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  enrollment-postgresql:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${ENROLLMENT_DB_NAME}
+      POSTGRES_USER: ${ENROLLMENT_DB_USER}
+      POSTGRES_PASSWORD: ${ENROLLMENT_DB_PASSWORD}
+    volumes:
+      - enrollment-postgresql-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  payment-postgresql:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${PAYMENT_DB_NAME}
+      POSTGRES_USER: ${PAYMENT_DB_USER}
+      POSTGRES_PASSWORD: ${PAYMENT_DB_PASSWORD}
+    volumes:
+      - payment-postgresql-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  notification-postgresql:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${NOTIFICATION_DB_NAME}
+      POSTGRES_USER: ${NOTIFICATION_DB_USER}
+      POSTGRES_PASSWORD: ${NOTIFICATION_DB_PASSWORD}
+    volumes:
+      - notification-postgresql-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  user-db-migrate:
+    image: postgres:16-alpine
+    environment:
+      PGPASSWORD: ${USER_DB_PASSWORD}
+    volumes:
+      - ./capstone/helm/user-service/migrations/002.sql:/migrations/002.sql:ro
+    command: ["sh", "-c", "psql -h user-postgresql -U ${USER_DB_USER} -d ${USER_DB_NAME} -v ON_ERROR_STOP=1 -c 'CREATE TABLE IF NOT EXISTS schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())' && psql -h user-postgresql -U ${USER_DB_USER} -d ${USER_DB_NAME} -v ON_ERROR_STOP=1 -f /migrations/002.sql"]
+    depends_on:
+      user-postgresql:
+        condition: service_healthy
+
+  course-db-migrate:
+    image: postgres:16-alpine
+    environment:
+      PGPASSWORD: ${COURSE_DB_PASSWORD}
+    volumes:
+      - ./capstone/helm/course-service/migrations/002.sql:/migrations/002.sql:ro
+    command: ["sh", "-c", "psql -h course-postgresql -U ${COURSE_DB_USER} -d ${COURSE_DB_NAME} -v ON_ERROR_STOP=1 -c 'CREATE TABLE IF NOT EXISTS schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())' && psql -h course-postgresql -U ${COURSE_DB_USER} -d ${COURSE_DB_NAME} -v ON_ERROR_STOP=1 -f /migrations/002.sql"]
+    depends_on:
+      course-postgresql:
+        condition: service_healthy
+
+  enrollment-db-migrate:
+    image: postgres:16-alpine
+    environment:
+      PGPASSWORD: ${ENROLLMENT_DB_PASSWORD}
+    volumes:
+      - ./capstone/helm/enrollment-service/migrations/002.sql:/migrations/002.sql:ro
+    command: ["sh", "-c", "psql -h enrollment-postgresql -U ${ENROLLMENT_DB_USER} -d ${ENROLLMENT_DB_NAME} -v ON_ERROR_STOP=1 -c 'CREATE TABLE IF NOT EXISTS schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())' && psql -h enrollment-postgresql -U ${ENROLLMENT_DB_USER} -d ${ENROLLMENT_DB_NAME} -v ON_ERROR_STOP=1 -f /migrations/002.sql"]
+    depends_on:
+      enrollment-postgresql:
+        condition: service_healthy
+
+  payment-db-migrate:
+    image: postgres:16-alpine
+    environment:
+      PGPASSWORD: ${PAYMENT_DB_PASSWORD}
+    volumes:
+      - ./capstone/helm/payment-service/migrations/002.sql:/migrations/002.sql:ro
+    command: ["sh", "-c", "psql -h payment-postgresql -U ${PAYMENT_DB_USER} -d ${PAYMENT_DB_NAME} -v ON_ERROR_STOP=1 -c 'CREATE TABLE IF NOT EXISTS schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())' && psql -h payment-postgresql -U ${PAYMENT_DB_USER} -d ${PAYMENT_DB_NAME} -v ON_ERROR_STOP=1 -f /migrations/002.sql"]
+    depends_on:
+      payment-postgresql:
+        condition: service_healthy
+
+  notification-db-migrate:
+    image: postgres:16-alpine
+    environment:
+      PGPASSWORD: ${NOTIFICATION_DB_PASSWORD}
+    volumes:
+      - ./capstone/helm/notification-service/migrations/002.sql:/migrations/002.sql:ro
+    command: ["sh", "-c", "psql -h notification-postgresql -U ${NOTIFICATION_DB_USER} -d ${NOTIFICATION_DB_NAME} -v ON_ERROR_STOP=1 -c 'CREATE TABLE IF NOT EXISTS schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())' && psql -h notification-postgresql -U ${NOTIFICATION_DB_USER} -d ${NOTIFICATION_DB_NAME} -v ON_ERROR_STOP=1 -f /migrations/002.sql"]
+    depends_on:
+      notification-postgresql:
+        condition: service_healthy
 
   redis:
     image: redis:7-alpine
@@ -33,11 +142,11 @@ services:
       - "8222:8222"
 
   minio:
-    image: minio/minio:latest
+    image: minio/minio:RELEASE.2024-10-29T16-01-48Z
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
-      MINIO_ROOT_USER: learnhub
-      MINIO_ROOT_PASSWORD: learnhub-minio-lab-password
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -48,89 +157,166 @@ services:
     build:
       context: .
       dockerfile: services/user-service/Dockerfile
-    image: learnhub/user-service:0.1.0
+      args:
+        APP_VERSION: ${APP_VERSION}
+        GIT_COMMIT: ${GIT_COMMIT}
+        BUILD_DATE: ${BUILD_DATE}
+    image: learnhub/user-service:${APP_VERSION}
     environment:
       SERVICE_NAME: user-service
       PORT: "8080"
-      APP_VERSION: "0.1.0"
-      POSTGRES_HOST: postgresql
-      JWT_ISSUER: learnhub
-      JWT_SECRET: learnhub-jwt-lab-secret
+      APP_VERSION: ${APP_VERSION}
+      RELEASE_ID: ${RELEASE_ID}
+      GIT_COMMIT: ${GIT_COMMIT}
+      DEPLOYMENT_ENV: compose
+      LOG_LEVEL: ${LOG_LEVEL}
+      LOG_FORMAT: ${LOG_FORMAT}
+      POSTGRES_HOST: user-postgresql
+      POSTGRES_DB: ${USER_DB_NAME}
+      POSTGRES_USER: ${USER_DB_USER}
+      POSTGRES_PASSWORD: ${USER_DB_PASSWORD}
+      JWT_ISSUER: ${JWT_ISSUER}
+      JWT_SECRET: ${JWT_SECRET}
     ports:
       - "8081:8080"
     depends_on:
-      - postgresql
+      user-db-migrate:
+        condition: service_completed_successfully
 
   course-service:
     build:
       context: .
       dockerfile: services/course-service/Dockerfile
-    image: learnhub/course-service:0.1.0
+      args:
+        APP_VERSION: ${APP_VERSION}
+        GIT_COMMIT: ${GIT_COMMIT}
+        BUILD_DATE: ${BUILD_DATE}
+    image: learnhub/course-service:${APP_VERSION}
     environment:
       SERVICE_NAME: course-service
       PORT: "8080"
-      APP_VERSION: "0.1.0"
-      POSTGRES_HOST: postgresql
+      APP_VERSION: ${APP_VERSION}
+      RELEASE_ID: ${RELEASE_ID}
+      GIT_COMMIT: ${GIT_COMMIT}
+      DEPLOYMENT_ENV: compose
+      LOG_LEVEL: ${LOG_LEVEL}
+      LOG_FORMAT: ${LOG_FORMAT}
+      POSTGRES_HOST: course-postgresql
+      POSTGRES_DB: ${COURSE_DB_NAME}
+      POSTGRES_USER: ${COURSE_DB_USER}
+      POSTGRES_PASSWORD: ${COURSE_DB_PASSWORD}
       MINIO_ENDPOINT: minio:9000
     ports:
       - "8082:8080"
     depends_on:
-      - postgresql
-      - minio
+      course-db-migrate:
+        condition: service_completed_successfully
+      minio:
+        condition: service_started
 
   enrollment-service:
     build:
       context: .
       dockerfile: services/enrollment-service/Dockerfile
-    image: learnhub/enrollment-service:0.1.0
+      args:
+        APP_VERSION: ${APP_VERSION}
+        GIT_COMMIT: ${GIT_COMMIT}
+        BUILD_DATE: ${BUILD_DATE}
+    image: learnhub/enrollment-service:${APP_VERSION}
     environment:
       SERVICE_NAME: enrollment-service
       PORT: "8080"
-      APP_VERSION: "0.1.0"
-      POSTGRES_HOST: postgresql
+      APP_VERSION: ${APP_VERSION}
+      RELEASE_ID: ${RELEASE_ID}
+      GIT_COMMIT: ${GIT_COMMIT}
+      DEPLOYMENT_ENV: compose
+      LOG_LEVEL: ${LOG_LEVEL}
+      LOG_FORMAT: ${LOG_FORMAT}
+      POSTGRES_HOST: enrollment-postgresql
+      POSTGRES_DB: ${ENROLLMENT_DB_NAME}
+      POSTGRES_USER: ${ENROLLMENT_DB_USER}
+      POSTGRES_PASSWORD: ${ENROLLMENT_DB_PASSWORD}
       REDIS_ADDR: redis:6379
       NATS_URL: nats://nats:4222
     ports:
       - "8083:8080"
     depends_on:
-      - postgresql
-      - redis
-      - nats
+      enrollment-db-migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_started
 
   payment-service:
     build:
       context: .
       dockerfile: services/payment-service/Dockerfile
-    image: learnhub/payment-service:0.1.0
+      args:
+        APP_VERSION: ${APP_VERSION}
+        GIT_COMMIT: ${GIT_COMMIT}
+        BUILD_DATE: ${BUILD_DATE}
+    image: learnhub/payment-service:${APP_VERSION}
     environment:
       SERVICE_NAME: payment-service
       PORT: "8080"
-      APP_VERSION: "0.1.0"
-      POSTGRES_HOST: postgresql
+      APP_VERSION: ${APP_VERSION}
+      RELEASE_ID: ${RELEASE_ID}
+      GIT_COMMIT: ${GIT_COMMIT}
+      DEPLOYMENT_ENV: compose
+      LOG_LEVEL: ${LOG_LEVEL}
+      LOG_FORMAT: ${LOG_FORMAT}
+      POSTGRES_HOST: payment-postgresql
+      POSTGRES_DB: ${PAYMENT_DB_NAME}
+      POSTGRES_USER: ${PAYMENT_DB_USER}
+      POSTGRES_PASSWORD: ${PAYMENT_DB_PASSWORD}
       NATS_URL: nats://nats:4222
     ports:
       - "8084:8080"
     depends_on:
-      - postgresql
-      - nats
+      payment-db-migrate:
+        condition: service_completed_successfully
+      nats:
+        condition: service_started
 
   notification-service:
     build:
       context: .
       dockerfile: services/notification-service/Dockerfile
-    image: learnhub/notification-service:0.1.0
+      args:
+        APP_VERSION: ${APP_VERSION}
+        GIT_COMMIT: ${GIT_COMMIT}
+        BUILD_DATE: ${BUILD_DATE}
+    image: learnhub/notification-service:${APP_VERSION}
     environment:
       SERVICE_NAME: notification-service
       PORT: "8080"
-      APP_VERSION: "0.1.0"
+      APP_VERSION: ${APP_VERSION}
+      RELEASE_ID: ${RELEASE_ID}
+      GIT_COMMIT: ${GIT_COMMIT}
+      DEPLOYMENT_ENV: compose
+      LOG_LEVEL: ${LOG_LEVEL}
+      LOG_FORMAT: ${LOG_FORMAT}
+      POSTGRES_HOST: notification-postgresql
+      POSTGRES_DB: ${NOTIFICATION_DB_NAME}
+      POSTGRES_USER: ${NOTIFICATION_DB_USER}
+      POSTGRES_PASSWORD: ${NOTIFICATION_DB_PASSWORD}
       NATS_URL: nats://nats:4222
-      SMTP_HOST: smtp.local
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_USERNAME: ${SMTP_USERNAME}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
     ports:
       - "8085:8080"
     depends_on:
-      - nats
+      notification-db-migrate:
+        condition: service_completed_successfully
+      nats:
+        condition: service_started
 
 volumes:
-  postgresql-data:
+  user-postgresql-data:
+  course-postgresql-data:
+  enrollment-postgresql-data:
+  payment-postgresql-data:
+  notification-postgresql-data:
   minio-data:
-

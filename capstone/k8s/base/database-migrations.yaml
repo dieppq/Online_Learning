@@ -1,0 +1,284 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: user-db-migrate-v001
+  labels:
+    app.kubernetes.io/name: user-db-migrate
+    app.kubernetes.io/part-of: learnhub
+    app.kubernetes.io/component: migration
+    app.kubernetes.io/version: "001"
+    learnhub.io/owner: user-service
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: user-db-migrate
+        app.kubernetes.io/part-of: learnhub
+        app.kubernetes.io/component: migration
+        learnhub.io/owner: user-service
+    spec:
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: postgres:16-alpine
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+              until PGPASSWORD="$POSTGRES_PASSWORD" psql -h user-postgresql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT 1" >/dev/null 2>&1; do sleep 2; done
+              PGPASSWORD="$POSTGRES_PASSWORD" psql -v ON_ERROR_STOP=1 -h user-postgresql -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<'SQL'
+              CREATE TABLE IF NOT EXISTS schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now());
+              INSERT INTO schema_migrations(version) VALUES ('001') ON CONFLICT DO NOTHING;
+              SQL
+              echo migration=user-service:001 status=applied
+          envFrom:
+            - secretRef:
+                name: user-service-db
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: course-db-migrate-v001
+  labels:
+    app.kubernetes.io/name: course-db-migrate
+    app.kubernetes.io/part-of: learnhub
+    app.kubernetes.io/component: migration
+    app.kubernetes.io/version: "001"
+    learnhub.io/owner: course-service
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: course-db-migrate
+        app.kubernetes.io/part-of: learnhub
+        app.kubernetes.io/component: migration
+        learnhub.io/owner: course-service
+    spec:
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: postgres:16-alpine
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+              until PGPASSWORD="$POSTGRES_PASSWORD" psql -h course-postgresql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT 1" >/dev/null 2>&1; do sleep 2; done
+              PGPASSWORD="$POSTGRES_PASSWORD" psql -v ON_ERROR_STOP=1 -h course-postgresql -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<'SQL'
+              CREATE TABLE IF NOT EXISTS schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now());
+              INSERT INTO schema_migrations(version) VALUES ('001') ON CONFLICT DO NOTHING;
+              SQL
+              echo migration=course-service:001 status=applied
+          envFrom:
+            - secretRef:
+                name: course-service-db
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: enrollment-db-migrate-v001
+  labels:
+    app.kubernetes.io/name: enrollment-db-migrate
+    app.kubernetes.io/part-of: learnhub
+    app.kubernetes.io/component: migration
+    app.kubernetes.io/version: "001"
+    learnhub.io/owner: enrollment-service
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: enrollment-db-migrate
+        app.kubernetes.io/part-of: learnhub
+        app.kubernetes.io/component: migration
+        learnhub.io/owner: enrollment-service
+    spec:
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: postgres:16-alpine
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+              until PGPASSWORD="$POSTGRES_PASSWORD" psql -h enrollment-postgresql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT 1" >/dev/null 2>&1; do sleep 2; done
+              PGPASSWORD="$POSTGRES_PASSWORD" psql -v ON_ERROR_STOP=1 -h enrollment-postgresql -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<'SQL'
+              CREATE TABLE IF NOT EXISTS schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now());
+              INSERT INTO schema_migrations(version) VALUES ('001') ON CONFLICT DO NOTHING;
+              SQL
+              echo migration=enrollment-service:001 status=applied
+          envFrom:
+            - secretRef:
+                name: enrollment-service-db
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: payment-db-migrate-v001
+  labels:
+    app.kubernetes.io/name: payment-db-migrate
+    app.kubernetes.io/part-of: learnhub
+    app.kubernetes.io/component: migration
+    app.kubernetes.io/version: "001"
+    learnhub.io/owner: payment-service
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: payment-db-migrate
+        app.kubernetes.io/part-of: learnhub
+        app.kubernetes.io/component: migration
+        learnhub.io/owner: payment-service
+    spec:
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: postgres:16-alpine
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+              until PGPASSWORD="$POSTGRES_PASSWORD" psql -h payment-postgresql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT 1" >/dev/null 2>&1; do sleep 2; done
+              PGPASSWORD="$POSTGRES_PASSWORD" psql -v ON_ERROR_STOP=1 -h payment-postgresql -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<'SQL'
+              CREATE TABLE IF NOT EXISTS schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now());
+              INSERT INTO schema_migrations(version) VALUES ('001') ON CONFLICT DO NOTHING;
+              SQL
+              echo migration=payment-service:001 status=applied
+          envFrom:
+            - secretRef:
+                name: payment-service-db
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: notification-db-migrate-v001
+  labels:
+    app.kubernetes.io/name: notification-db-migrate
+    app.kubernetes.io/part-of: learnhub
+    app.kubernetes.io/component: migration
+    app.kubernetes.io/version: "001"
+    learnhub.io/owner: notification-service
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: notification-db-migrate
+        app.kubernetes.io/part-of: learnhub
+        app.kubernetes.io/component: migration
+        learnhub.io/owner: notification-service
+    spec:
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: postgres:16-alpine
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+              until PGPASSWORD="$POSTGRES_PASSWORD" psql -h notification-postgresql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT 1" >/dev/null 2>&1; do sleep 2; done
+              PGPASSWORD="$POSTGRES_PASSWORD" psql -v ON_ERROR_STOP=1 -h notification-postgresql -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<'SQL'
+              CREATE TABLE IF NOT EXISTS schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now());
+              INSERT INTO schema_migrations(version) VALUES ('001') ON CONFLICT DO NOTHING;
+              SQL
+              echo migration=notification-service:001 status=applied
+          envFrom:
+            - secretRef:
+                name: notification-service-db
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]

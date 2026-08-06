@@ -1,0 +1,108 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: payment-postgresql-data
+  labels:
+    app.kubernetes.io/name: payment-postgresql
+    app.kubernetes.io/part-of: learnhub
+    app.kubernetes.io/component: database
+    learnhub.io/owner: payment-service
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 512Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-postgresql
+  labels:
+    app.kubernetes.io/name: payment-postgresql
+    app.kubernetes.io/part-of: learnhub
+    app.kubernetes.io/component: database
+    app.kubernetes.io/version: "16"
+    learnhub.io/owner: payment-service
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: payment-postgresql
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: payment-postgresql
+        app.kubernetes.io/part-of: learnhub
+        app.kubernetes.io/component: database
+        app.kubernetes.io/version: "16"
+        learnhub.io/owner: payment-service
+    spec:
+      serviceAccountName: learnhub-app
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgresql
+          image: postgres:16-alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: postgres
+              containerPort: 5432
+          envFrom:
+            - secretRef:
+                name: payment-service-db
+          env:
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+            initialDelaySeconds: 20
+            periodSeconds: 20
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: payment-postgresql-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-postgresql
+  labels:
+    app.kubernetes.io/name: payment-postgresql
+    app.kubernetes.io/part-of: learnhub
+    app.kubernetes.io/component: database
+    learnhub.io/owner: payment-service
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: payment-postgresql
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+

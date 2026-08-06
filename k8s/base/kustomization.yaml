@@ -3,11 +3,9 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - configmap.yaml
-  - secret.yaml
   - user-service.yaml
   - course-service.yaml
   - enrollment-service.yaml
   - payment-service.yaml
   - notification-service.yaml
   - ingress.yaml
-

@@ -1,9 +1,9 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: learnhub-pvc-reader
+  name: learnhub-pvc-reader-v2
   labels:
-    app.kubernetes.io/name: learnhub-pvc-reader
+    app.kubernetes.io/name: learnhub-pvc-reader-v2
     app.kubernetes.io/part-of: learnhub
     app.kubernetes.io/component: storage-proof
 spec:
@@ -11,7 +11,7 @@ spec:
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: learnhub-pvc-reader
+        app.kubernetes.io/name: learnhub-pvc-reader-v2
         app.kubernetes.io/part-of: learnhub
         app.kubernetes.io/component: storage-proof
     spec:
@@ -33,6 +33,15 @@ spec:
             - -c
             - |
               set -eu
+              attempts=0
+              until test -f /data/capstone.txt; do
+                attempts=$((attempts + 1))
+                if [ "$attempts" -ge 60 ]; then
+                  echo "timed out waiting for PVC writer" >&2
+                  exit 1
+                fi
+                sleep 2
+              done
               cat /data/capstone.txt
           volumeMounts:
             - name: proof-data
@@ -55,4 +64,3 @@ spec:
         - name: proof-data
           persistentVolumeClaim:
             claimName: learnhub-proof-data
-

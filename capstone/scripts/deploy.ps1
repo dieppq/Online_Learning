@@ -35,8 +35,29 @@ try {
 
   Invoke-Kubectl "apply" "-k" $OverlayPath
 
+  $migrationJobs = @(
+    "user-db-migrate-v001",
+    "course-db-migrate-v001",
+    "enrollment-db-migrate-v001",
+    "payment-db-migrate-v001",
+    "notification-db-migrate-v001",
+    "user-db-migrate-v002",
+    "course-db-migrate-v002",
+    "enrollment-db-migrate-v002",
+    "payment-db-migrate-v002",
+    "notification-db-migrate-v002"
+  )
+
+  foreach ($job in $migrationJobs) {
+    Invoke-Kubectl "wait" "--for=condition=complete" "job/$job" "-n" $Namespace "--timeout=${TimeoutSeconds}s"
+  }
+
   $deployments = @(
-    "postgresql",
+    "user-postgresql",
+    "course-postgresql",
+    "enrollment-postgresql",
+    "payment-postgresql",
+    "notification-postgresql",
     "redis",
     "nats",
     "minio",

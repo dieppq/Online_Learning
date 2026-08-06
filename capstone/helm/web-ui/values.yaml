@@ -1,0 +1,115 @@
+replicaCount: 1
+nameOverride: ""
+fullnameOverride: web-ui
+component: frontend
+
+image:
+  repository: learnhub/web-ui
+  tag: "0.1.2"
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+container:
+  name: web
+  port: 8080
+  portName: http
+service:
+  type: ClusterIP
+  port: 80
+
+database:
+  enabled: false
+  deploy: false
+
+serviceAccount:
+  create: true
+  name: ""
+  automount: false
+
+configMap:
+  enabled: false
+  create: false
+  existingName: ""
+  optional: false
+  data: {}
+secret:
+  enabled: false
+  existingName: ""
+  optional: false
+
+env: []
+podAnnotations: {}
+podLabels: {}
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 32Mi
+  limits:
+    cpu: 100m
+    memory: 64Mi
+
+probes:
+  readiness:
+    httpGet:
+      path: /
+      port: http
+    initialDelaySeconds: 3
+    periodSeconds: 5
+  liveness:
+    httpGet:
+      path: /
+      port: http
+    initialDelaySeconds: 10
+    periodSeconds: 10
+  startup:
+    enabled: true
+    httpGet:
+      path: /
+      port: http
+    failureThreshold: 12
+    periodSeconds: 5
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 101
+  runAsGroup: 101
+  seccompProfile:
+    type: RuntimeDefault
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 101
+  runAsGroup: 101
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 60
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+
+extraVolumes:
+  - name: nginx-cache
+    emptyDir: {}
+  - name: nginx-run
+    emptyDir: {}
+  - name: nginx-tmp
+    emptyDir: {}
+extraVolumeMounts:
+  - name: nginx-cache
+    mountPath: /var/cache/nginx
+  - name: nginx-run
+    mountPath: /var/run
+  - name: nginx-tmp
+    mountPath: /tmp
+test:
+  enabled: true
+  image: curlimages/curl:8.10.1
+  path: /

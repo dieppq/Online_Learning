@@ -36,6 +36,32 @@ spec:
         app.kubernetes.io/version: "2024-07-16"
     spec:
       serviceAccountName: learnhub-app
+      initContainers:
+        - name: volume-permissions
+          image: busybox:1.36
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - chown -R 1000:1000 /data
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 50m
+              memory: 32Mi
+          securityContext:
+            runAsNonRoot: false
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+              add: ["CHOWN"]
       containers:
         - name: minio
           image: minio/minio:RELEASE.2024-07-16T23-46-41Z

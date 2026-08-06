@@ -5,33 +5,78 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
 
+var (
+	BuildVersion = "dev"
+	BuildCommit  = "unknown"
+	BuildTime    = "unknown"
+)
+
+var requestSequence atomic.Uint64
+
 type Service struct {
-	Name      string
-	Version   string
-	Port      string
-	StartedAt time.Time
-	Logger    *log.Logger
+	Name        string
+	Version     string
+	Release     string
+	Commit      string
+	BuildTime   string
+	Environment string
+	Port        string
+	StartedAt   time.Time
+	Logger      *slog.Logger
 }
 
 func NewService(defaultName string) Service {
 	name := Env("SERVICE_NAME", defaultName)
+	version := Env("APP_VERSION", BuildVersion)
+	logger := newLogger().With(
+		"service", name,
+		"version", version,
+		"release", Env("RELEASE_ID", version),
+		"commit", Env("GIT_COMMIT", BuildCommit),
+	)
 
 	return Service{
-		Name:      name,
-		Version:   Env("APP_VERSION", "0.1.0"),
-		Port:      Env("PORT", "8080"),
-		StartedAt: time.Now().UTC(),
-		Logger:    log.New(os.Stdout, name+" ", log.LstdFlags|log.LUTC|log.Lmsgprefix),
+		Name:        name,
+		Version:     version,
+		Release:     Env("RELEASE_ID", version),
+		Commit:      Env("GIT_COMMIT", BuildCommit),
+		BuildTime:   BuildTime,
+		Environment: Env("DEPLOYMENT_ENV", "local"),
+		Port:        Env("PORT", "8080"),
+		StartedAt:   time.Now().UTC(),
+		Logger:      logger,
 	}
+}
+
+func newLogger() *slog.Logger {
+	level := new(slog.LevelVar)
+	switch strings.ToLower(Env("LOG_LEVEL", "info")) {
+	case "debug":
+		level.Set(slog.LevelDebug)
+	case "warn", "warning":
+		level.Set(slog.LevelWarn)
+	case "error":
+		level.Set(slog.LevelError)
+	default:
+		level.Set(slog.LevelInfo)
+	}
+
+	options := &slog.HandlerOptions{Level: level}
+	if strings.EqualFold(Env("LOG_FORMAT", "json"), "text") {
+		return slog.New(slog.NewTextHandler(os.Stdout, options))
+	}
+	return slog.New(slog.NewJSONHandler(os.Stdout, options))
 }
 
 func Env(key, fallback string) string {
@@ -55,6 +100,8 @@ func RegisterHealth(mux *http.ServeMux, svc Service, dependencies map[string]str
 			"status":  "live",
 			"service": svc.Name,
 			"version": svc.Version,
+			"release": svc.Release,
+			"commit":  svc.Commit,
 			"uptime":  time.Since(svc.StartedAt).String(),
 		})
 	})
@@ -64,6 +111,7 @@ func RegisterHealth(mux *http.ServeMux, svc Service, dependencies map[string]str
 			"status":       "ready",
 			"service":      svc.Name,
 			"version":      svc.Version,
+			"release":      svc.Release,
 			"dependencies": dependencies,
 		})
 	})
@@ -92,9 +140,7 @@ func WriteJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 
-	if err := json.NewEncoder(w).Encode(payload); err != nil {
-		log.Printf("encode response: %v", err)
-	}
+	_ = json.NewEncoder(w).Encode(payload)
 }
 
 func ReadJSON(r *http.Request) (map[string]any, error) {
@@ -138,13 +184,16 @@ func PathValue(path, prefix string) (string, bool) {
 func RunHTTP(svc Service, handler http.Handler) error {
 	server := &http.Server{
 		Addr:              ListenAddr(svc.Port),
-		Handler:           handler,
+		Handler:           RequestLogger(svc, handler),
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 
 	errCh := make(chan error, 1)
 	go func() {
-		svc.Logger.Printf("starting http server on %s", server.Addr)
+		svc.Logger.Info("http server starting", "address", server.Addr, "environment", svc.Environment, "build_time", svc.BuildTime)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 			return
@@ -157,7 +206,7 @@ func RunHTTP(svc Service, handler http.Handler) error {
 
 	select {
 	case sig := <-stopCh:
-		svc.Logger.Printf("received signal %s, shutting down", sig)
+		svc.Logger.Info("shutdown signal received", "signal", sig.String())
 	case err := <-errCh:
 		return err
 	}
@@ -169,5 +218,63 @@ func RunHTTP(svc Service, handler http.Handler) error {
 		return err
 	}
 
+	svc.Logger.Info("http server stopped")
 	return <-errCh
+}
+
+func ServeHTTP(svc Service, handler http.Handler) {
+	if err := RunHTTP(svc, handler); err != nil {
+		svc.Logger.Error("http server failed", "error", err)
+		os.Exit(1)
+	}
+}
+
+type responseRecorder struct {
+	http.ResponseWriter
+	status int
+	bytes  int
+}
+
+func (r *responseRecorder) WriteHeader(status int) {
+	r.status = status
+	r.ResponseWriter.WriteHeader(status)
+}
+
+func (r *responseRecorder) Write(payload []byte) (int, error) {
+	if r.status == 0 {
+		r.WriteHeader(http.StatusOK)
+	}
+	n, err := r.ResponseWriter.Write(payload)
+	r.bytes += n
+	return n, err
+}
+
+func RequestLogger(svc Service, next http.Handler) http.Handler {
+	logHealth := strings.EqualFold(Env("LOG_HEALTH_REQUESTS", "false"), "true")
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestID := strings.TrimSpace(r.Header.Get("X-Request-ID"))
+		if requestID == "" {
+			requestID = strconv.FormatInt(time.Now().UnixNano(), 36) + "-" + strconv.FormatUint(requestSequence.Add(1), 36)
+		}
+		w.Header().Set("X-Request-ID", requestID)
+
+		started := time.Now()
+		recorder := &responseRecorder{ResponseWriter: w}
+		next.ServeHTTP(recorder, r)
+
+		if !logHealth && (r.URL.Path == "/healthz" || r.URL.Path == "/readyz") {
+			return
+		}
+
+		svc.Logger.Info("http request",
+			"request_id", requestID,
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", recorder.status,
+			"bytes", recorder.bytes,
+			"duration_ms", time.Since(started).Milliseconds(),
+			"remote_addr", r.RemoteAddr,
+		)
+	})
 }

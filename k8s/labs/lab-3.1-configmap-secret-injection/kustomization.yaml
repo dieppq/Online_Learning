@@ -12,10 +12,5 @@ configMapGenerator:
       - LOG_LEVEL=debug
       - COURSE_SERVICE_URL=http://learnhub-configured-course
 
-secretGenerator:
-  - name: learnhub-jwt-secret
-    files:
-      - JWT_SECRET=jwt-secret.txt
-
 resources:
   - workload.yaml

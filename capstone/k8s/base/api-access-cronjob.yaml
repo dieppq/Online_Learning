@@ -10,7 +10,7 @@ spec:
   schedule: "*/15 * * * *"
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 2
-  failedJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 0
   jobTemplate:
     spec:
       backoffLimit: 1
@@ -40,8 +40,8 @@ spec:
                   set -eu
                   token="$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)"
                   ca="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
-                  url="https://kubernetes.default.svc/api/v1/namespaces/${POD_NAMESPACE}/endpoints"
-                  curl --fail --silent --show-error --cacert "$ca" -H "Authorization: Bearer $token" "$url" | grep -q "course-service"
+                  url="https://${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT_HTTPS}/api/v1/namespaces/${POD_NAMESPACE}/endpoints"
+                  curl --fail --silent --show-error --connect-timeout 5 --max-time 20 --retry 5 --retry-all-errors --retry-delay 2 --cacert "$ca" -H "Authorization: Bearer $token" "$url" | grep -q "course-service"
                   echo kubernetes-api-access=ok
               env:
                 - name: POD_NAMESPACE
@@ -61,4 +61,3 @@ spec:
                 capabilities:
                   drop:
                     - ALL
-

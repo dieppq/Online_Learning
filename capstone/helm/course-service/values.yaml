@@ -1,0 +1,129 @@
+replicaCount: 2
+nameOverride: ""
+fullnameOverride: course-service
+component: api
+
+image:
+  repository: learnhub/course-service
+  tag: "0.2.2"
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+container:
+  name: main
+  port: 8080
+  portName: http
+service:
+  type: ClusterIP
+  port: 80
+
+database:
+  enabled: true
+  deploy: true
+  owner: course-service
+  host: course-postgresql
+  port: 5432
+  secretName: course-service-db
+  waitForReady: true
+  migration:
+    enabled: true
+    version: "002"
+    file: migrations/002.sql
+  networkPolicy:
+    enabled: true
+  image:
+    repository: postgres
+    tag: "16-alpine"
+    pullPolicy: IfNotPresent
+  storage:
+    size: 512Mi
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+serviceAccount:
+  create: true
+  name: ""
+  automount: false
+
+configMap:
+  enabled: true
+  create: false
+  existingName: learnhub-config
+  optional: false
+  data: {}
+secret:
+  enabled: true
+  existingName: learnhub-secret
+  optional: false
+
+env:
+  - name: SERVICE_NAME
+    value: course-service
+  - name: COURSE_TRACK
+    value: blue
+podAnnotations: {}
+podLabels:
+  learnhub.io/owner: course-service
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 250m
+    memory: 128Mi
+
+probes:
+  readiness:
+    httpGet:
+      path: /readyz
+      port: http
+    initialDelaySeconds: 3
+    periodSeconds: 5
+  liveness:
+    httpGet:
+      path: /healthz
+      port: http
+    initialDelaySeconds: 10
+    periodSeconds: 10
+  startup:
+    enabled: true
+    httpGet:
+      path: /healthz
+      port: http
+    failureThreshold: 12
+    periodSeconds: 5
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 50
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+
+extraVolumes: []
+extraVolumeMounts: []
+test:
+  enabled: true
+  image: curlimages/curl:8.10.1
+  path: /healthz

@@ -6,18 +6,18 @@ Muc tieu: deploy he thong microservices LearnHub len Kubernetes voi day du check
 
 ## Business domain
 
-LearnHub la nen tang hoc online. Hoc vien dang ky tai khoan, xem khoa hoc, thanh toan mock, duoc ghi danh vao khoa hoc, theo doi tien do hoc va nhan thong bao.
+LearnHub la nen tang hoc online. Hoc vien dang ky tai khoan, xem khoa hoc, tao thanh toan lab, duoc ghi danh tu event, theo doi tien do hoc va nhan thong bao.
 
 ## Core services
 
 | Service | Image | Role | Main paths |
 |---|---|---|---|
 | `web-ui` | `learnhub/web-ui:0.1.2` | Web UI cho demo LearnHub | `/`, `/courses`, `/students`, `/enrollments`, `/payments`, `/notifications`, `/platform` |
-| `user-service` | `learnhub/user-service:0.1.0` | Dang ky, dang nhap, profile | `/api/users` |
-| `course-service` | `learnhub/course-service:0.1.0` | Khoa hoc, bai hoc, metadata | `/api/courses`, `/cpu-burn` |
-| `enrollment-service` | `learnhub/enrollment-service:0.1.0` | Ghi danh, tien do hoc | `/api/enrollments`, `/api/progress` |
-| `payment-service` | `learnhub/payment-service:0.1.0` | Thanh toan mock | `/api/payments` |
-| `notification-service` | `learnhub/notification-service:0.1.0` | Thong bao mock | `/api/notifications` |
+| `user-service` | `learnhub/user-service:0.2.1` | User persistence, login lab | `/api/users` |
+| `course-service` | `learnhub/course-service:0.2.2` | Course/lesson persistence | `/api/courses`, `/cpu-burn` |
+| `enrollment-service` | `learnhub/enrollment-service:0.2.1` | Enrollment/progress, NATS consumer | `/api/enrollments`, `/api/progress` |
+| `payment-service` | `learnhub/payment-service:0.2.1` | Payment persistence, NATS publisher | `/api/payments` |
+| `notification-service` | `learnhub/notification-service:0.2.1` | Notification persistence, NATS consumer | `/api/notifications` |
 
 Moi service co `/healthz`, `/readyz`, Dockerfile rieng trong `../services/<service>/Dockerfile`, va duoc deploy bang Deployment rieng.
 
@@ -28,6 +28,7 @@ capstone/
   README.md
   docs/
     architecture.md
+    12-factor.md
     ckad-checklist.md
     demo-script.md
     proposal.md
@@ -42,16 +43,31 @@ capstone/
     app.js
     Dockerfile
   helm/
-    learnhub-course/
+    learnhub-common/
+    user-service/
+    course-service/
+    enrollment-service/
+    payment-service/
+    notification-service/
+    web-ui/
   scripts/
     build.ps1
     create-secret.ps1
     deploy.ps1
     smoke-test.ps1
+    check-12-factor.ps1
     blue-green-switch.ps1
     cleanup.ps1
+    build.sh
+    create-secret.sh
+    deploy.sh
+    smoke-test.sh
+    blue-green-switch.sh
+    install-ingress-nginx.sh
+    cleanup.sh
   secrets/
     learnhub-secret.env.example
+    service-database-secret.env.example
 ```
 
 ## Prerequisites
@@ -87,7 +103,15 @@ Tu project root `Online_Learning`:
 powershell -ExecutionPolicy Bypass -File .\capstone\scripts\build.ps1
 ```
 
-Script build tag `0.1.0` cho 5 backend service, `web-ui:0.1.2`, va build them `course-service:0.2.0` de demo blue/green.
+Script build tag `0.2.1` cho backend, `course-service:0.2.2`, `web-ui:0.1.2`, va build them `course-service:0.3.1` de demo blue/green.
+
+Tren Linux:
+
+```bash
+sh ./capstone/scripts/build.sh
+SKIP_BUILD=true sh ./capstone/scripts/deploy.sh dev
+NAMESPACE=learnhub-capstone-dev sh ./capstone/scripts/smoke-test.sh
+```
 
 ## Deploy dev overlay
 
@@ -98,9 +122,48 @@ powershell -ExecutionPolicy Bypass -File .\capstone\scripts\deploy.ps1 -Overlay 
 Script se:
 
 - Tao namespace `learnhub-capstone-dev` neu chua co.
-- Tao `learnhub-secret` bang gia tri random local, khong commit secret that vao repo.
+- Tao `learnhub-secret` va 5 database Secret rieng bang gia tri random local, khong commit secret that vao repo.
 - Apply `capstone/k8s/overlays/dev`.
 - Doi rollout cua cac Deployment chinh.
+- Doi 10 database migration Job version `001` va `002` hoan tat.
+
+## Database per service
+
+Nam backend service so huu database rieng:
+
+| Service | PostgreSQL DNS | Credential Secret | PVC |
+|---|---|---|---|
+| `user-service` | `user-postgresql:5432` | `user-service-db` | `user-postgresql-data` |
+| `course-service` | `course-postgresql:5432` | `course-service-db` | `course-postgresql-data` |
+| `enrollment-service` | `enrollment-postgresql:5432` | `enrollment-service-db` | `enrollment-postgresql-data` |
+| `payment-service` | `payment-postgresql:5432` | `payment-service-db` | `payment-postgresql-data` |
+| `notification-service` | `notification-postgresql:5432` | `notification-service-db` | `notification-postgresql-data` |
+
+Moi app Pod co init container chay `psql SELECT 1`. NetworkPolicy loai port `5432` khoi rule noi bo chung va chi cho phep Pod co cung `learnhub.io/owner` truy cap database cua service.
+
+Moi database co migration `v001` tao migration ledger va `v002` tao business schema/seed data. Job idempotent va dung cung Secret/NetworkPolicy cua service.
+
+## Real asynchronous flow
+
+`POST /api/payments/{id}/confirm` cap nhat payment database, publish JSON event `payment.completed`, sau do flush NATS. `enrollment-service` va `notification-service` subscribe bang queue group rieng, ghi vao database cua minh va dung unique key de xu ly event lap lai an toan. `POST /api/progress` publish `lesson.completed` cho notification consumer.
+
+```powershell
+curl.exe -X POST http://localhost/api/payments/p-1001/confirm
+Start-Sleep -Seconds 3
+curl.exe http://localhost/api/users/u-1001/courses
+curl.exe http://localhost/api/notifications
+kubectl logs deploy/enrollment-service -n learnhub-capstone-dev -c main | Select-String "event consumed"
+kubectl logs deploy/notification-service -n learnhub-capstone-dev -c main | Select-String "event consumed"
+```
+
+Kiem tra nhanh:
+
+```powershell
+kubectl get deploy,svc,pvc -n learnhub-capstone-dev -l app.kubernetes.io/component=database
+kubectl logs deploy/user-service -n learnhub-capstone-dev -c wait-for-database
+kubectl get networkpolicy -n learnhub-capstone-dev
+kubectl get job -l app.kubernetes.io/component=migration -n learnhub-capstone-dev
+```
 
 Neu image da co san:
 
@@ -113,6 +176,14 @@ powershell -ExecutionPolicy Bypass -File .\capstone\scripts\deploy.ps1 -Overlay 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\capstone\scripts\smoke-test.ps1 -Namespace learnhub-capstone-dev
 ```
+
+Kiem tra baseline 12-Factor (code, Compose, Kustomize, Helm va Go test):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\capstone\scripts\check-12-factor.ps1
+```
+
+Ma tran day du va ranh gioi production nam tai [`docs/12-factor.md`](docs/12-factor.md).
 
 Lenh thu cong quan trong:
 
@@ -182,7 +253,7 @@ kubectl run capstone-curl --rm -i --restart=Never --image=curlimages/curl:8.10.1
 
 ## Blue/green switch
 
-Course traffic mac dinh vao `course-service-blue`. Track `blue` dung image `course-service:0.1.0`, track `green` dung image `course-service:0.2.0`.
+Course traffic mac dinh vao `course-service-blue`. Track `blue` dung image `course-service:0.2.2`, track `green` dung image `course-service:0.3.1`.
 
 ```powershell
 kubectl get svc course-service -n learnhub-capstone-dev -o jsonpath='{.spec.selector.track}'
@@ -190,7 +261,7 @@ kubectl get svc course-service -n learnhub-capstone-dev -o jsonpath='{.spec.sele
 kubectl run capstone-curl-course-version --rm -i --restart=Never --image=curlimages/curl:8.10.1 -n learnhub-capstone-dev --labels=app.kubernetes.io/part-of=learnhub -- curl --fail --silent http://course-service/
 ```
 
-Neu Service dang tro blue, curl `/` tra ve `"version":"0.1.0"`. Switch sang green:
+Neu Service dang tro blue, curl `/` tra ve `"version":"0.2.2"`. Switch sang green:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\capstone\scripts\blue-green-switch.ps1 -Namespace learnhub-capstone-dev -Track green
@@ -202,7 +273,7 @@ kubectl get endpointslice -n learnhub-capstone-dev -l kubernetes.io/service-name
 kubectl run capstone-curl-course-version --rm -i --restart=Never --image=curlimages/curl:8.10.1 -n learnhub-capstone-dev --labels=app.kubernetes.io/part-of=learnhub -- curl --fail --silent http://course-service/
 ```
 
-Sau khi switch green, selector phai la `green`, EndpointSlice phai target Pod `course-service-green-*`, va curl `/` phai tra ve `"version":"0.2.0"`.
+Sau khi switch green, selector phai la `green`, EndpointSlice phai target Pod `course-service-green-*`, va curl `/` phai tra ve `"version":"0.3.1"`.
 
 Quay lai blue va kiem tra lai:
 
@@ -211,25 +282,30 @@ powershell -ExecutionPolicy Bypass -File .\capstone\scripts\blue-green-switch.ps
 
 kubectl get svc course-service -n learnhub-capstone-dev -o jsonpath='{.spec.selector.track}'
 
-kubectl run capstone-curl-course-version --rm -i --restart=Never `
-  --image=curlimages/curl:8.10.1 `
-  -n learnhub-capstone-dev `
-  --labels=app.kubernetes.io/part-of=learnhub `
-  -- curl --fail --silent http://course-service/
+kubectl run capstone-curl-course-version --rm -i --restart=Never --image=curlimages/curl:8.10.1 -n learnhub-capstone-dev --labels=app.kubernetes.io/part-of=learnhub -- curl --fail --silent http://course-service/
 ```
 
-## Helm demo
+## Helm charts
 
-Chart Helm rieng cho `course-service` nam tai `capstone/helm/learnhub-course`.
+Moi application service co chart rieng trong `capstone/helm`. Cac chart dung library chart `learnhub-common` de chia se Deployment, Service, ServiceAccount, ConfigMap tuy chon, HPA, PDB va Helm test.
+
+Build dependency va lint mot chart:
 
 ```powershell
-helm upgrade --install learnhub-course .\capstone\helm\learnhub-course -n learnhub-capstone-dev --set image.tag=0.1.0
-helm upgrade learnhub-course .\capstone\helm\learnhub-course -n learnhub-capstone-dev --set image.tag=0.2.0
+helm dependency build .\capstone\helm\course-service
+helm lint .\capstone\helm\course-service
+```
+
+Demo course chart song song voi bo Kustomize chinh:
+
+```powershell
+helm upgrade --install learnhub-course .\capstone\helm\course-service -n learnhub-capstone-dev --set fullnameOverride=course-service-helm --set database.deploy=false --set database.migration.enabled=false --set image.tag=0.2.2
+helm upgrade learnhub-course .\capstone\helm\course-service -n learnhub-capstone-dev --reuse-values --set image.tag=0.3.1
 helm history learnhub-course -n learnhub-capstone-dev
 helm rollback learnhub-course 1 -n learnhub-capstone-dev
 ```
 
-Chart nay deploy service demo `course-service-helm` de khong xung dot voi bo Kustomize chinh.
+Xem danh sach chart, values va quy tac khong cai chong resource Helm/Kustomize tai `capstone/helm/README.md`.
 
 ## Cleanup
 
@@ -239,7 +315,8 @@ powershell -ExecutionPolicy Bypass -File .\capstone\scripts\cleanup.ps1 -Namespa
 
 ## Known limitations
 
-- Business logic dang la mock API de tap trung vao CKAD deployment/debug.
-- PostgreSQL, Redis, NATS va MinIO la lab dependencies, chua co migration/schema production.
+- Payment gateway, JWT signing, SMTP delivery, Redis cache va MinIO object operations van la lab boundary; API business chinh da persist vao PostgreSQL va event flow da dung NATS that.
+- Core NATS hien la at-most-once; production can JetStream/outbox, retry/dead-letter va contract versioning.
+- Migration `v002` la schema demo; production can migration tool, rollback/data backfill va backup policy.
 - NetworkPolicy can CNI co enforcement; Docker Desktop mac dinh co the khong enforce tuy cau hinh.
 - Secret do script sinh la secret demo local, production can dung secret manager hoac pipeline rieng.

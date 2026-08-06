@@ -1,0 +1,10 @@
+apiVersion: v2
+name: enrollment-service
+description: Helm chart for the LearnHub enrollment-service
+type: application
+version: 0.3.1
+appVersion: "0.2.1"
+dependencies:
+  - name: learnhub-common
+    version: 0.3.0
+    repository: file://../learnhub-common

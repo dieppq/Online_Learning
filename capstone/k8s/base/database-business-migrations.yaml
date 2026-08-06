@@ -1,0 +1,339 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: user-db-migrate-v002
+  labels:
+    app.kubernetes.io/name: user-db-migrate
+    app.kubernetes.io/part-of: learnhub
+    app.kubernetes.io/component: migration
+    app.kubernetes.io/version: "002"
+    learnhub.io/owner: user-service
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: user-db-migrate
+        app.kubernetes.io/part-of: learnhub
+        app.kubernetes.io/component: migration
+        learnhub.io/owner: user-service
+    spec:
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: postgres:16-alpine
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+              until PGPASSWORD="$POSTGRES_PASSWORD" psql -h user-postgresql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT 1" >/dev/null 2>&1; do sleep 2; done
+              PGPASSWORD="$POSTGRES_PASSWORD" psql -v ON_ERROR_STOP=1 -h user-postgresql -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<'SQL'
+              CREATE TABLE IF NOT EXISTS users (
+                id text PRIMARY KEY,
+                name text NOT NULL,
+                email text NOT NULL UNIQUE,
+                role text NOT NULL CHECK (role IN ('student', 'instructor', 'admin')),
+                created_at timestamptz NOT NULL DEFAULT now()
+              );
+              INSERT INTO users(id,name,email,role) VALUES
+                ('u-1001','Nguyen An','an@example.com','student'),
+                ('u-2001','Tran Linh','linh@example.com','instructor')
+              ON CONFLICT DO NOTHING;
+              INSERT INTO schema_migrations(version) VALUES ('002') ON CONFLICT DO NOTHING;
+              SQL
+              echo migration=user-service:002 status=applied
+          envFrom:
+            - secretRef:
+                name: user-service-db
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {cpu: 100m, memory: 64Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: course-db-migrate-v002
+  labels:
+    app.kubernetes.io/name: course-db-migrate
+    app.kubernetes.io/part-of: learnhub
+    app.kubernetes.io/component: migration
+    app.kubernetes.io/version: "002"
+    learnhub.io/owner: course-service
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: course-db-migrate
+        app.kubernetes.io/part-of: learnhub
+        app.kubernetes.io/component: migration
+        learnhub.io/owner: course-service
+    spec:
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: postgres:16-alpine
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+              until PGPASSWORD="$POSTGRES_PASSWORD" psql -h course-postgresql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT 1" >/dev/null 2>&1; do sleep 2; done
+              PGPASSWORD="$POSTGRES_PASSWORD" psql -v ON_ERROR_STOP=1 -h course-postgresql -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<'SQL'
+              CREATE TABLE IF NOT EXISTS courses (
+                id text PRIMARY KEY,
+                title text NOT NULL,
+                description text NOT NULL DEFAULT '',
+                price integer NOT NULL CHECK (price >= 0),
+                status text NOT NULL DEFAULT 'draft',
+                created_at timestamptz NOT NULL DEFAULT now()
+              );
+              CREATE TABLE IF NOT EXISTS lessons (
+                id text PRIMARY KEY,
+                course_id text NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+                title text NOT NULL,
+                duration_minutes integer NOT NULL CHECK (duration_minutes > 0),
+                position integer NOT NULL,
+                UNIQUE(course_id, position)
+              );
+              INSERT INTO courses(id,title,description,price,status) VALUES
+                ('c-go-101','Go for backend services','Build practical Go HTTP services.',490000,'published'),
+                ('c-k8s-ckad','Kubernetes CKAD hands-on','Deploy and debug LearnHub on Kubernetes.',790000,'published'),
+                ('c-sql-basic','PostgreSQL for web applications','Relational data fundamentals.',390000,'published')
+              ON CONFLICT DO NOTHING;
+              INSERT INTO lessons(id,course_id,title,duration_minutes,position) VALUES
+                ('l-01','c-k8s-ckad','Pod and namespace',18,1),
+                ('l-02','c-k8s-ckad','Deployment and rollout',24,2),
+                ('l-03','c-k8s-ckad','Service and internal DNS',21,3)
+              ON CONFLICT DO NOTHING;
+              INSERT INTO schema_migrations(version) VALUES ('002') ON CONFLICT DO NOTHING;
+              SQL
+              echo migration=course-service:002 status=applied
+          envFrom:
+            - secretRef:
+                name: course-service-db
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {cpu: 100m, memory: 64Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: enrollment-db-migrate-v002
+  labels:
+    app.kubernetes.io/name: enrollment-db-migrate
+    app.kubernetes.io/part-of: learnhub
+    app.kubernetes.io/component: migration
+    app.kubernetes.io/version: "002"
+    learnhub.io/owner: enrollment-service
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: enrollment-db-migrate
+        app.kubernetes.io/part-of: learnhub
+        app.kubernetes.io/component: migration
+        learnhub.io/owner: enrollment-service
+    spec:
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: postgres:16-alpine
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+              until PGPASSWORD="$POSTGRES_PASSWORD" psql -h enrollment-postgresql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT 1" >/dev/null 2>&1; do sleep 2; done
+              PGPASSWORD="$POSTGRES_PASSWORD" psql -v ON_ERROR_STOP=1 -h enrollment-postgresql -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<'SQL'
+              CREATE TABLE IF NOT EXISTS enrollments (
+                id text PRIMARY KEY,
+                user_id text NOT NULL,
+                course_id text NOT NULL,
+                status text NOT NULL DEFAULT 'active',
+                source_event_id text UNIQUE,
+                enrolled_at timestamptz NOT NULL DEFAULT now(),
+                UNIQUE(user_id, course_id)
+              );
+              CREATE TABLE IF NOT EXISTS progress (
+                user_id text NOT NULL,
+                course_id text NOT NULL,
+                completed_lessons integer NOT NULL DEFAULT 0,
+                total_lessons integer NOT NULL DEFAULT 18,
+                progress_percentage integer NOT NULL DEFAULT 0 CHECK (progress_percentage BETWEEN 0 AND 100),
+                last_lesson_id text,
+                updated_at timestamptz NOT NULL DEFAULT now(),
+                PRIMARY KEY(user_id, course_id)
+              );
+              INSERT INTO enrollments(id,user_id,course_id,status) VALUES ('e-1001','u-1001','c-k8s-ckad','active') ON CONFLICT DO NOTHING;
+              INSERT INTO progress(user_id,course_id,completed_lessons,total_lessons,progress_percentage,last_lesson_id) VALUES ('u-1001','c-k8s-ckad',7,18,39,'l-03') ON CONFLICT DO NOTHING;
+              INSERT INTO schema_migrations(version) VALUES ('002') ON CONFLICT DO NOTHING;
+              SQL
+              echo migration=enrollment-service:002 status=applied
+          envFrom:
+            - secretRef:
+                name: enrollment-service-db
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {cpu: 100m, memory: 64Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: payment-db-migrate-v002
+  labels:
+    app.kubernetes.io/name: payment-db-migrate
+    app.kubernetes.io/part-of: learnhub
+    app.kubernetes.io/component: migration
+    app.kubernetes.io/version: "002"
+    learnhub.io/owner: payment-service
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: payment-db-migrate
+        app.kubernetes.io/part-of: learnhub
+        app.kubernetes.io/component: migration
+        learnhub.io/owner: payment-service
+    spec:
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: postgres:16-alpine
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+              until PGPASSWORD="$POSTGRES_PASSWORD" psql -h payment-postgresql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT 1" >/dev/null 2>&1; do sleep 2; done
+              PGPASSWORD="$POSTGRES_PASSWORD" psql -v ON_ERROR_STOP=1 -h payment-postgresql -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<'SQL'
+              CREATE TABLE IF NOT EXISTS payments (
+                id text PRIMARY KEY,
+                user_id text NOT NULL,
+                course_id text NOT NULL,
+                amount integer NOT NULL CHECK (amount > 0),
+                currency text NOT NULL DEFAULT 'VND',
+                status text NOT NULL DEFAULT 'pending',
+                created_at timestamptz NOT NULL DEFAULT now(),
+                confirmed_at timestamptz
+              );
+              INSERT INTO payments(id,user_id,course_id,amount,currency,status) VALUES ('p-1001','u-1001','c-k8s-ckad',790000,'VND','pending') ON CONFLICT DO NOTHING;
+              INSERT INTO schema_migrations(version) VALUES ('002') ON CONFLICT DO NOTHING;
+              SQL
+              echo migration=payment-service:002 status=applied
+          envFrom:
+            - secretRef:
+                name: payment-service-db
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {cpu: 100m, memory: 64Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: notification-db-migrate-v002
+  labels:
+    app.kubernetes.io/name: notification-db-migrate
+    app.kubernetes.io/part-of: learnhub
+    app.kubernetes.io/component: migration
+    app.kubernetes.io/version: "002"
+    learnhub.io/owner: notification-service
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: notification-db-migrate
+        app.kubernetes.io/part-of: learnhub
+        app.kubernetes.io/component: migration
+        learnhub.io/owner: notification-service
+    spec:
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: postgres:16-alpine
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+              until PGPASSWORD="$POSTGRES_PASSWORD" psql -h notification-postgresql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT 1" >/dev/null 2>&1; do sleep 2; done
+              PGPASSWORD="$POSTGRES_PASSWORD" psql -v ON_ERROR_STOP=1 -h notification-postgresql -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<'SQL'
+              CREATE TABLE IF NOT EXISTS notifications (
+                id text PRIMARY KEY,
+                event_id text UNIQUE,
+                type text NOT NULL,
+                recipient text NOT NULL,
+                user_id text,
+                course_id text,
+                status text NOT NULL DEFAULT 'queued',
+                created_at timestamptz NOT NULL DEFAULT now()
+              );
+              INSERT INTO notifications(id,type,recipient,user_id,course_id,status) VALUES ('n-1001','welcome','an@example.com','u-1001',NULL,'sent') ON CONFLICT DO NOTHING;
+              INSERT INTO schema_migrations(version) VALUES ('002') ON CONFLICT DO NOTHING;
+              SQL
+              echo migration=notification-service:002 status=applied
+          envFrom:
+            - secretRef:
+                name: notification-service-db
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {cpu: 100m, memory: 64Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]

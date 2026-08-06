@@ -1,0 +1,63 @@
+name: learnhub-ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: false
+      - uses: azure/setup-kubectl@v4
+      - uses: azure/setup-helm@v4
+
+      - name: Test Go services
+        run: go test ./...
+
+      - name: Render Kustomize overlays
+        run: |
+          kubectl kustomize capstone/k8s/overlays/dev >/dev/null
+          kubectl kustomize capstone/k8s/overlays/prod >/dev/null
+
+      - name: Lint Helm charts
+        shell: bash
+        run: |
+          for chart in capstone/helm/*; do
+            if [ -f "$chart/Chart.yaml" ]; then
+              helm dependency update "$chart"
+              helm lint "$chart"
+            fi
+          done
+
+      - name: Validate Compose parity
+        run: docker compose --env-file configs/env/local.env.example config --quiet
+
+  images:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service:
+          - user-service
+          - course-service
+          - enrollment-service
+          - payment-service
+          - notification-service
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build immutable service image
+        run: |
+          docker build \
+            --build-arg APP_VERSION=ci-${GITHUB_SHA::12} \
+            --build-arg GIT_COMMIT="$GITHUB_SHA" \
+            --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            -t "learnhub/${{ matrix.service }}:ci-${GITHUB_SHA::12}" \
+            -f "services/${{ matrix.service }}/Dockerfile" .
